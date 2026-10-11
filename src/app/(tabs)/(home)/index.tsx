@@ -1,10 +1,11 @@
 import { router } from 'expo-router';
-import { ChevronRight, FileWarning, Upload } from 'lucide-react-native';
+import { ChevronRight, FileWarning, ScanLine, Upload } from 'lucide-react-native';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { MonthBars } from '@/components/month-bars';
 import { Reveal, Skeleton } from '@/components/motion';
-import { Attn, Row, SectionLabel, TopBar } from '@/components/ui';
+import { Attn, Button, Row, SectionLabel, TopBar } from '@/components/ui';
+import { captureUnlinked } from '@/lib/capture';
 import { useNamedAccounts } from '@/lib/accounts';
 import type { Kpi } from '@/lib/api';
 import { useConnection } from '@/lib/connection';
@@ -67,7 +68,7 @@ export default function Overview() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <TopBar title="Overview" />
+      <TopBar title="Overview" right={<Button size="sm" icon={ScanLine} title="Scan" onPress={() => captureUnlinked('scan')} />} />
       <ScrollView
         contentContainerStyle={{ paddingHorizontal: space(4), paddingBottom: space(12) }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}

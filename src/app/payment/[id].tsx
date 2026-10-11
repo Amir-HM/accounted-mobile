@@ -6,13 +6,14 @@ import { useState } from 'react';
 import { Alert, ScrollView, Text, View } from 'react-native';
 
 import { Reveal } from '@/components/motion';
+import { hideWithUndo } from '@/components/swipe-tx-row';
 import { Attn, Button, Divider, Row, TopBar } from '@/components/ui';
 import { nameAccount, useLedgerNames, useNicknames } from '@/lib/accounts';
 import { getTransaction, type Transaction } from '@/lib/api';
 import { captureAndQueue, type CaptureMethod } from '@/lib/capture';
 import { useConnection } from '@/lib/connection';
 import { formatMoney, tidyMerchant } from '@/lib/format';
-import { queryClient, setNoReceiptNeeded, useCashAccounts } from '@/lib/queries';
+import { queryClient, useCashAccounts } from '@/lib/queries';
 import { colors, space, type } from '@/lib/theme';
 
 export default function PaymentScreen() {
@@ -53,21 +54,8 @@ export default function PaymentScreen() {
 
   function noReceipt() {
     if (!t) return;
-    Alert.alert(
-      'No receipt needed?',
-      'For transfers between your own accounts, tax payments and similar. This only hides it on this iPhone; nothing changes in the books.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Hide',
-          isPreferred: true,
-          onPress: () => {
-            setNoReceiptNeeded(t.id, true);
-            router.back();
-          },
-        },
-      ],
-    );
+    hideWithUndo(t);
+    router.back();
   }
 
   return (

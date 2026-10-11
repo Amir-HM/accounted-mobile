@@ -59,7 +59,13 @@
         }
       ],
       "expo-font",
-      "expo-notifications"
+      "expo-notifications",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Accounted uses Face ID to keep your books private."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

@@ -1,8 +1,11 @@
+import * as Notifications from 'expo-notifications';
 import { Tabs } from 'expo-router';
+import { useEffect } from 'react';
 import { House, ReceiptText, Settings } from 'lucide-react-native';
 import { StyleSheet } from 'react-native';
 
 import { useHiddenIds, useMissingReceipts } from '@/lib/queries';
+import { usePushEnabled } from '@/lib/push';
 import { useCaptures } from '@/lib/queue';
 import { fonts, useHex } from '@/lib/theme';
 
@@ -14,6 +17,12 @@ export default function TabsLayout() {
   const captures = useCaptures();
   const inFlight = new Set(captures.filter((c) => c.transaction && c.state !== 'failed').map((c) => c.transaction!.id));
   const count = (missing.data ?? []).filter((t) => !hidden.includes(t.id) && !inFlight.has(t.id)).length;
+  const push = usePushEnabled();
+
+  // The app icon carries the same count once notifications are allowed.
+  useEffect(() => {
+    if (!missing.isPending) Notifications.setBadgeCountAsync(push ? count : 0).catch(() => {});
+  }, [count, push, missing.isPending]);
 
   return (
     <Tabs

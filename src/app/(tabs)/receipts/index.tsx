@@ -6,10 +6,11 @@ import { useState } from 'react';
 import { ActionSheetIOS, Alert, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 
 import { CaptureRow } from '@/components/capture-row';
+import { SwipeTxRow } from '@/components/swipe-tx-row';
 import { Skeleton } from '@/components/motion';
 import { Attn, Button, EmptyState, SectionLabel, Segmented, TopBar } from '@/components/ui';
 import type { Transaction } from '@/lib/api';
-import { captureAndQueue, type CaptureMethod } from '@/lib/capture';
+import { captureUnlinked } from '@/lib/capture';
 import { formatMoney, tidyMerchant } from '@/lib/format';
 import { useHiddenIds, useMissingReceipts } from '@/lib/queries';
 import { useCaptures, type Capture } from '@/lib/queue';
@@ -21,15 +22,6 @@ type Item =
   | { kind: 'tx'; key: string; tx: Transaction; last: boolean }
   | { kind: 'empty'; key: string }
   | { kind: 'loading'; key: string };
-
-export async function captureUnlinked(method: CaptureMethod) {
-  try {
-    const c = await captureAndQueue(method);
-    if (c) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  } catch (e) {
-    Alert.alert('Could not add the receipt', e instanceof Error ? e.message : String(e));
-  }
-}
 
 function addMenu() {
   ActionSheetIOS.showActionSheetWithOptions({ options: ['Choose photo', 'Choose file', 'Cancel'], cancelButtonIndex: 2 }, (i) =>
@@ -122,18 +114,7 @@ function ItemView({ item, view }: { item: Item; view: 'missing' | 'attached' }) 
         />
       );
     case 'tx':
-      return (
-        <Pressable
-          onPress={() => router.push({ pathname: '/payment/[id]', params: { id: item.tx.id } })}
-          style={({ pressed }) => [st.tx, !item.last && st.divider, pressed && { backgroundColor: colors.muted }]}
-        >
-          <Text style={st.date}>{isoDay(item.tx.date)}</Text>
-          <Text style={[type.body, { flex: 1 }]} numberOfLines={1}>
-            {tidyMerchant(item.tx.merchant_name ?? item.tx.description)}
-          </Text>
-          <Text style={st.amount}>{formatMoney(item.tx.amount, item.tx.currency)}</Text>
-        </Pressable>
-      );
+      return <SwipeTxRow tx={item.tx} last={item.last} />;
     case 'loading':
       return (
         <View style={{ paddingTop: space(2) }}>

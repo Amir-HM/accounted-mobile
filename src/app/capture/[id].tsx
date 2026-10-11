@@ -1,12 +1,14 @@
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
-import { CircleAlert, CircleCheck, FileText } from 'lucide-react-native';
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
+import { CircleAlert, CircleCheck, FileText, Maximize2 } from 'lucide-react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { Reveal } from '@/components/motion';
 import { Attn, Button, Row, SectionLabel, TopBar } from '@/components/ui';
 import { suggestPayment, verify } from '@/lib/checks';
+import { useConnection } from '@/lib/connection';
 import { formatMoney, tidyMerchant } from '@/lib/format';
 import { useHiddenIds, useMissingReceipts } from '@/lib/queries';
 import { assignTransaction, captureFile, discard, retry, useCaptures } from '@/lib/queue';
@@ -16,6 +18,7 @@ import { colors, radius, space, type, useHex } from '@/lib/theme';
 export default function CaptureScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const hex = useHex();
+  const conn = useConnection();
   const captures = useCaptures();
   const c = captures.find((x) => x.id === id);
   const missing = useMissingReceipts();
@@ -42,16 +45,21 @@ export default function CaptureScreen() {
       <TopBar title="Receipt" back />
       <ScrollView contentContainerStyle={{ paddingHorizontal: space(4), paddingBottom: space(12) }}>
         <Reveal index={0} style={{ paddingTop: space(6) }}>
-          {c.mimeType.startsWith('image/') ? (
-            <Image source={captureFile(c).uri} style={st.preview} contentFit="contain" transition={150} />
-          ) : (
-            <View style={[st.preview, { alignItems: 'center', justifyContent: 'center', gap: space(2) }]}>
-              <FileText size={32} strokeWidth={1.25} color={hex.mutedForeground} />
-              <Text style={type.meta} numberOfLines={1}>
-                {c.fileName}
-              </Text>
+          <Pressable accessibilityRole="imagebutton" accessibilityLabel="Open the receipt" onPress={() => router.push({ pathname: '/viewer/[id]', params: { id: c.id } })}>
+            {c.mimeType.startsWith('image/') ? (
+              <Image source={captureFile(c).uri} style={st.preview} contentFit="contain" transition={150} />
+            ) : (
+              <View style={[st.preview, { alignItems: 'center', justifyContent: 'center', gap: space(2) }]}>
+                <FileText size={32} strokeWidth={1.25} color={hex.mutedForeground} />
+                <Text style={type.meta} numberOfLines={1}>
+                  {c.fileName}
+                </Text>
+              </View>
+            )}
+            <View style={st.zoom}>
+              <Maximize2 size={14} strokeWidth={1.5} color={hex.foreground} />
             </View>
-          )}
+          </Pressable>
         </Reveal>
 
         {c.state === 'failed' ? (
@@ -64,13 +72,15 @@ export default function CaptureScreen() {
 
         <Reveal index={1}>
           <SectionLabel right={verdict.state === 'unread' ? undefined : x?.confidence != null ? `${Math.round(x.confidence * 100)}% sure` : undefined}>
-            Read from the receipt
+            Read by AI
           </SectionLabel>
           {verdict.state === 'unread' ? (
             <Text style={[type.lead, { paddingBottom: space(2) }]}>
-              {c.state === 'done' || c.documentId
-                ? 'Not read. The server has no AI reading switched on, so only the file was archived.'
-                : 'Read when the upload finishes.'}
+              {!(c.state === 'done' || c.documentId)
+                ? 'Read when the upload finishes.'
+                : c.inboxItemId
+                  ? 'The server could not read this receipt. Check it against the file.'
+                  : 'Archived without a reading (uploaded before reading was available).'}
             </Text>
           ) : (
             <>
@@ -88,6 +98,14 @@ export default function CaptureScreen() {
                 valueTone="muted"
               />
               {x?.invoice?.invoiceNumber ? <Row title="Number" value={x.invoice.invoiceNumber} valueTone="muted" last /> : null}
+              {c.inboxItemId && conn ? (
+                <Text style={[type.meta, { paddingTop: space(3) }]}>
+                  Something read wrong?{' '}
+                  <Text style={{ textDecorationLine: 'underline', color: colors.foreground }} onPress={() => WebBrowser.openBrowserAsync(`${conn.serverUrl}/e/general/invoice-inbox`)}>
+                    Correct it on the web
+                  </Text>
+                </Text>
+              ) : null}
             </>
           )}
         </Reveal>
@@ -172,6 +190,19 @@ const st = StyleSheet.create({
     borderColor: colors.border,
     backgroundColor: colors.muted,
     overflow: 'hidden',
+  },
+  zoom: {
+    position: 'absolute',
+    right: space(3),
+    bottom: space(3),
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.background,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
   },
   check: { flexDirection: 'row', alignItems: 'center', gap: space(3), minHeight: 48, paddingVertical: space(2) },
   divider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },

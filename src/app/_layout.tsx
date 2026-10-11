@@ -6,13 +6,18 @@ import { addNetworkStateListener } from 'expo-network';
 import { DarkTheme, DefaultTheme, router, Stack, ThemeProvider } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { AppState, useColorScheme } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
+import { LockGate } from '@/components/lock-gate';
 import { ToastHost } from '@/components/toast-host';
 import { useConnection } from '@/lib/connection';
 import { queryClient } from '@/lib/queries';
-import { runQueue } from '@/lib/queue';
+import { captureUnlinked } from '@/lib/capture';
+import { getPref, setPref } from '@/lib/prefs';
+import { usePushEnabled } from '@/lib/push';
+import { runQueue, useCaptures } from '@/lib/queue';
 import { colors, fonts } from '@/lib/theme';
 
 SplashScreen.preventAutoHideAsync();
@@ -52,12 +57,41 @@ function useQueueWorker(enabled: boolean) {
   }, [enabled]);
 }
 
+/** After the first receipt lands on a payment, offer notifications once. */
+function usePrimeNotifications(enabled: boolean) {
+  const captures = useCaptures();
+  const push = usePushEnabled();
+  const seen = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    const attached = captures.filter((c) => c.state === 'done' && c.attachedAt).map((c) => c.id);
+    if (seen.current == null) {
+      seen.current = new Set(attached); // what was already attached at launch never triggers it
+      return;
+    }
+    const fresh = attached.filter((id) => !seen.current!.has(id));
+    fresh.forEach((id) => seen.current!.add(id));
+    if (enabled && fresh.length && !push && !getPref('pushPrimed')) {
+      setPref('pushPrimed', true);
+      setTimeout(() => router.push('/prime'), 1200); // after the success toast has been read
+    }
+  }, [captures, enabled, push]);
+}
+
 export default function RootLayout() {
   const scheme = useColorScheme();
   const connection = useConnection();
   const [fontsLoaded] = useFonts({ Geist_400Regular, Geist_500Medium, Geist_600SemiBold, HedvigLettersSerif_400Regular });
   useQueueWorker(!!connection);
   useNotificationRouting(!!connection && !!fontsLoaded);
+  usePrimeNotifications(!!connection && !!fontsLoaded);
+
+  // "Open on the scanner": the camera first, once per cold start.
+  const scannedOnLaunch = useRef(false);
+  useEffect(() => {
+    if (!connection || !fontsLoaded || scannedOnLaunch.current || !getPref('openOnScanner') || getPref('faceIdLock')) return;
+    scannedOnLaunch.current = true;
+    setTimeout(() => captureUnlinked('scan'), 500);
+  }, [connection, fontsLoaded]);
 
   useEffect(() => {
     if (fontsLoaded) SplashScreen.hideAsync();
@@ -66,6 +100,7 @@ export default function RootLayout() {
 
   const base = scheme === 'dark' ? DarkTheme : DefaultTheme;
   return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
     <ThemeProvider value={{ ...base, colors: { ...base.colors, background: scheme === 'dark' ? '#121212' : '#ffffff' } }}>
       <QueryClientProvider client={queryClient}>
         <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
@@ -74,6 +109,11 @@ export default function RootLayout() {
             <Stack.Screen name="payment/[id]" />
             <Stack.Screen name="account/[id]" />
             <Stack.Screen name="capture/[id]" />
+            <Stack.Screen name="viewer/[id]" options={{ presentation: 'fullScreenModal', animation: 'fade' }} />
+            <Stack.Screen
+              name="prime"
+              options={{ presentation: 'formSheet', sheetAllowedDetents: [0.62], sheetGrabberVisible: true, sheetCornerRadius: 12 }}
+            />
             <Stack.Screen
               name="assign/[captureId]"
               options={{
@@ -93,7 +133,9 @@ export default function RootLayout() {
           </Stack.Protected>
         </Stack>
         <ToastHost />
+        <LockGate enabled={!!connection} />
       </QueryClientProvider>
     </ThemeProvider>
+    </GestureHandlerRootView>
   );
 }

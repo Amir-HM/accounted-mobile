@@ -2,7 +2,8 @@ import * as DocumentPicker from 'expo-document-picker';
 import { File } from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
 import * as Print from 'expo-print';
-import { TurboModuleRegistry } from 'react-native';
+import * as Haptics from 'expo-haptics';
+import { Alert, TurboModuleRegistry } from 'react-native';
 
 import { enqueue, type Capture } from './queue';
 
@@ -70,4 +71,14 @@ export async function captureAndQueue(method: CaptureMethod, transaction?: Captu
   const picked = method === 'scan' ? await scanReceipt() : method === 'photo' ? await pickPhoto() : await pickFile();
   if (!picked) return null;
   return enqueue({ ...picked, transaction });
+}
+
+/** A receipt with no payment yet: archived and read now, matched later (a payment is suggested from the reading). */
+export async function captureUnlinked(method: CaptureMethod) {
+  try {
+    const c = await captureAndQueue(method);
+    if (c) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  } catch (e) {
+    Alert.alert('Could not add the receipt', e instanceof Error ? e.message : String(e));
+  }
 }
