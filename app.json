@@ -62,6 +62,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "owner": "amirhm",
+    "extra": {
+      "eas": {
+        "projectId": "0025b398-a363-45ef-b3c4-59831e8f6968"
+      }
     }
   }
 }
