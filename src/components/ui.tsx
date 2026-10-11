@@ -307,10 +307,10 @@ export const s = StyleSheet.create({
     paddingHorizontal: space(4),
     minHeight: 34,
   },
-  // Full width reads as a control, not a chip: rounded rectangle, the thumb's radius nested inside it.
-  segmentedFill: { alignSelf: 'stretch', borderRadius: radius.panel },
-  segmentFill: { flex: 1, justifyContent: 'center', borderRadius: radius.panel - 3 },
-  thumbFill: { borderRadius: radius.panel - 3 },
+  // Full width keeps the pill shape, like the buttons beside it.
+  segmentedFill: { alignSelf: 'stretch' },
+  segmentFill: { flex: 1, justifyContent: 'center' },
+  thumbFill: {},
   thumb: {
     position: 'absolute',
     top: 3,
