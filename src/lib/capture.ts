@@ -2,7 +2,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { File } from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
 import * as Print from 'expo-print';
-import DocumentScanner, { ResponseType, ScanDocumentResponseStatus } from 'react-native-document-scanner-plugin';
+import { TurboModuleRegistry } from 'react-native';
 
 import { enqueue, type Capture } from './queue';
 
@@ -10,8 +10,23 @@ type Picked = { uri: string; fileName: string; mimeType: string; source: Capture
 
 const stamp = () => new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
 
+/** The VisionKit scanner is a native module that Expo Go does not ship. */
+const hasScanner = () => TurboModuleRegistry.get('DocumentScanner') != null;
+
+/** Expo Go fallback: the plain camera, one photo. */
+async function takePhoto(): Promise<Picked | null> {
+  const perm = await ImagePicker.requestCameraPermissionsAsync();
+  if (!perm.granted) throw new Error('Camera access is off. Turn it on in Settings to photograph receipts.');
+  const res = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.9 });
+  const a = res.canceled ? null : res.assets[0];
+  if (!a) return null;
+  return { uri: a.uri, fileName: `receipt-${stamp()}.jpg`, mimeType: 'image/jpeg', source: 'camera', pages: 1 };
+}
+
 /** VisionKit document camera. Several pages become one PDF. */
 export async function scanReceipt(): Promise<Picked | null> {
+  if (!hasScanner()) return takePhoto();
+  const { default: DocumentScanner, ResponseType, ScanDocumentResponseStatus } = await import('react-native-document-scanner-plugin');
   const res = await DocumentScanner.scanDocument({ croppedImageQuality: 100, responseType: ResponseType.ImageFilePath });
   const pages = res.scannedImages ?? [];
   if (res.status === ScanDocumentResponseStatus.Cancel || pages.length === 0) return null;
