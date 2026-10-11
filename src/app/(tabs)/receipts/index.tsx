@@ -118,11 +118,7 @@ function ItemView({ item, view }: { item: Item; view: 'missing' | 'attached' }) 
         <CaptureRow
           capture={item.capture}
           last={item.last}
-          onPress={
-            item.capture.state === 'failed' || (item.capture.state === 'done' && !item.capture.transaction)
-              ? () => onCapturePress(item.capture)
-              : undefined
-          }
+          onPress={() => router.push({ pathname: '/capture/[id]', params: { id: item.capture.id } })}
         />
       );
     case 'tx':
