@@ -6,6 +6,7 @@ import { useSyncExternalStore } from 'react';
 import { ApiError, attachDocument, documentsUrl, request, type UploadedDocument } from './api';
 import { verify } from './checks';
 import { loadConnection, type Connection } from './connection';
+import { formatMoney } from './format';
 import { completeUpload, createUpload, type Extraction } from './mcp';
 import { showToast } from './toast';
 
@@ -250,7 +251,7 @@ export function readingLine(x: Extraction | null | undefined): string {
   const total = x.totals?.total;
   return [
     x.supplier?.name,
-    total != null ? new Intl.NumberFormat('sv-SE', { style: 'currency', currency: x.invoice?.currency || 'SEK' }).format(total) : null,
+    total != null ? formatMoney(total, x.invoice?.currency || 'SEK') : null,
     x.invoice?.invoiceDate,
   ]
     .filter(Boolean)

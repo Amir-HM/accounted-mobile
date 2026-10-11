@@ -19,7 +19,20 @@ const NUMBER_IS_THE_PAYEE = /^(swish|bankgiro|bg|plusgiro|pg|insättning|överf�
  * change from payment to payment, so long digit runs and `*CODE` suffixes are
  * dropped, except where the number identifies who was paid.
  */
-export function merchantKey(raw: string | null | undefined) {
+const keys = new Map<string, string>();
+
+export function merchantKey(raw: string | null | undefined): string {
+  const k = raw ?? '';
+  let hit = keys.get(k);
+  if (hit === undefined) {
+    hit = keyUncached(k);
+    if (keys.size > 2000) keys.clear();
+    keys.set(k, hit);
+  }
+  return hit;
+}
+
+function keyUncached(raw: string): string {
   let s = (raw ?? '').normalize('NFC').toUpperCase().replace(/\s+/g, ' ').trim();
   if (!NUMBER_IS_THE_PAYEE.test(s)) {
     const stripped = s

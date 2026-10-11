@@ -41,22 +41,29 @@ const GENERIC = new Set([
   'Sparkonto', 'PlusGiro', 'Valutakonton', 'Särskilda bankkonton', 'Kassa',
 ]);
 
-export function useLedgerNames() {
+/** The company's chart of accounts, once an hour: bank names and cost accounts both read from it. */
+export function useChart() {
   const c = useConnection();
   return useQuery({
-    queryKey: ['ledger-names', c?.serverUrl, c?.companyId],
+    queryKey: ['chart', c?.serverUrl, c?.companyId],
     queryFn: async () => {
-      const r = await request<{ accounts: { account_number: string; account_name: string }[] }>(
+      const r = await request<{ accounts: { account_number: string; account_name: string; is_active?: boolean }[] }>(
         c as Connection,
-        `/companies/${c!.companyId}/accounts?limit=500`,
+        `/companies/${c!.companyId}/accounts?limit=2000`,
       );
-      return Object.fromEntries(
-        r.data.accounts.filter((a) => String(a.account_number).startsWith('19')).map((a) => [String(a.account_number), a.account_name]),
-      ) as Record<string, string>;
+      return r.data.accounts.map((a) => ({ number: String(a.account_number), name: a.account_name, active: a.is_active !== false }));
     },
     enabled: !!c,
     staleTime: 3600_000,
   });
+}
+
+export function useLedgerNames() {
+  const chart = useChart();
+  const data = chart.data
+    ? (Object.fromEntries(chart.data.filter((a) => a.number.startsWith('19')).map((a) => [a.number, a.name])) as Record<string, string>)
+    : undefined;
+  return { ...chart, data };
 }
 
 // ---- Names set on this iPhone ----

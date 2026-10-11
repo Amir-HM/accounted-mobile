@@ -158,7 +158,7 @@ export default function BookPayment() {
               const r = await categorize(conn!, t.id, args);
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
               showToast(r.voucher ? `Booked as ${r.voucher}` : 'Booked');
-              void queryClient.invalidateQueries();
+              for (const key of ['to-book', 'tx', 'kpi', 'suggest']) void queryClient.invalidateQueries({ queryKey: [key] });
               router.back();
             } catch (e) {
               reportActionError(e, 'Booking');

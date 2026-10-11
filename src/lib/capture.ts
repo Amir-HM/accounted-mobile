@@ -28,7 +28,8 @@ async function takePhoto(): Promise<Picked | null> {
 export async function scanReceipt(): Promise<Picked | null> {
   if (!hasScanner()) return takePhoto();
   const { default: DocumentScanner, ResponseType, ScanDocumentResponseStatus } = await import('react-native-document-scanner-plugin');
-  const res = await DocumentScanner.scanDocument({ croppedImageQuality: 100, responseType: ResponseType.ImageFilePath });
+  // 85: sharp for a receipt; 100 made a five-page PDF about 25 MB in memory.
+  const res = await DocumentScanner.scanDocument({ croppedImageQuality: 85, responseType: ResponseType.ImageFilePath });
   const pages = res.scannedImages ?? [];
   if (res.status === ScanDocumentResponseStatus.Cancel || pages.length === 0) return null;
   if (pages.length === 1) {

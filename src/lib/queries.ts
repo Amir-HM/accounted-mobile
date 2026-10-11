@@ -1,4 +1,5 @@
-import { QueryClient, useQuery } from '@tanstack/react-query';
+import { focusManager, QueryClient, useQuery } from '@tanstack/react-query';
+import { AppState } from 'react-native';
 
 import {
   ApiError,
@@ -12,7 +13,6 @@ import {
   listBankConnections,
   listCashAccounts,
   listFiscalPeriods,
-  listCostAccounts,
   listInvoices,
   listSupplierInvoicesToApprove,
   listLinkedEntryIds,
@@ -20,6 +20,7 @@ import {
   listVatFilings,
   type Transaction,
 } from './api';
+import { useChart } from './accounts';
 import { useConnection, type Connection } from './connection';
 import { listPending, suggestCategories } from './mcp';
 import { usePref } from './prefs';
@@ -32,23 +33,36 @@ export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 60_000,
-      // A 429 clears within the minute: wait it out instead of failing the screen.
-      retry: (n, e) => (rateLimited(e) ? n < 3 : n < 1),
-      retryDelay: (n, e) => (rateLimited(e) ? 20_000 : 1_000),
+      // A 429 is a per-minute window: wait as long as the server asks (Retry-After), then try once more.
+      retry: (n, e) => (rateLimited(e) ? n < 2 : n < 1),
+      retryDelay: (n, e) => (rateLimited(e) ? ((e as ApiError).retryAfter ?? 60) * 1000 : 1_000),
     },
   },
 });
 
+// Coming back to the app refreshes what is stale (TanStack Query does not see AppState by itself).
+focusManager.setEventListener((setFocused) => {
+  const sub = AppState.addEventListener('change', (s) => setFocused(s === 'active'));
+  return () => sub.remove();
+});
+
 const DETAIL_CONCURRENCY = 6;
 
+/** At most n at a time; the first failure stops the rest from being sent. */
 async function mapLimit<T, R>(xs: T[], n: number, f: (x: T) => Promise<R>): Promise<R[]> {
   const out: R[] = new Array(xs.length);
   let i = 0;
+  let failed = false;
   await Promise.all(
     Array.from({ length: Math.min(n, xs.length) }, async () => {
-      while (i < xs.length) {
+      while (i < xs.length && !failed) {
         const k = i++;
-        out[k] = await f(xs[k]);
+        try {
+          out[k] = await f(xs[k]);
+        } catch (e) {
+          failed = true;
+          throw e;
+        }
       }
     }),
   );
@@ -61,12 +75,14 @@ async function mapLimit<T, R>(xs: T[], n: number, f: (x: T) => Promise<R>): Prom
  * only unbooked payments, which can carry a pinned document, are read one by
  * one. Keeps a typical refresh to a handful of calls under the key's rate limit.
  */
-async function fetchMissing(c: Connection, lookbackDays: number): Promise<Transaction[]> {
+async function fetchMissing(c: Connection, lookbackDays: number, signal?: AbortSignal): Promise<Transaction[]> {
   const since = new Date(Date.now() - lookbackDays * 86400_000).toISOString().slice(0, 10);
-  const [rows, linked] = await Promise.all([listTransactionsSince(c, since), listLinkedEntryIds(c)]);
+  // Receipts are uploaded around their payment: 90 days before the window is plenty.
+  const docsFrom = new Date(Date.now() - (lookbackDays + 90) * 86400_000).toISOString().slice(0, 10);
+  const [rows, linked] = await Promise.all([listTransactionsSince(c, since, undefined, { signal }), listLinkedEntryIds(c, docsFrom, signal)]);
   const out = rows.filter((t) => t.amount < 0 && !(t.journal_entry_id && linked.has(t.journal_entry_id)));
   const unbooked = out.filter((t) => !t.journal_entry_id);
-  const details = new Map((await mapLimit(unbooked, DETAIL_CONCURRENCY, (t) => getTransaction(c, t.id))).map((t) => [t.id, t]));
+  const details = new Map((await mapLimit(unbooked, DETAIL_CONCURRENCY, (t) => getTransaction(c, t.id, signal))).map((t) => [t.id, t]));
   return out
     .map((t) => details.get(t.id) ?? ({ ...t, amount_sek: null, document_id: null, receipt_id: null, category: null } as Transaction))
     .filter((t) => !t.document_id)
@@ -78,8 +94,10 @@ export function useMissingReceipts() {
   const days = useLookbackDays();
   return useQuery({
     queryKey: ['missing', c?.serverUrl, c?.companyId, days],
-    queryFn: () => fetchMissing(c!, days),
+    queryFn: ({ signal }) => fetchMissing(c!, days, signal),
     enabled: !!c,
+    // The costliest query in the app (one call per unbooked payment): changes are pushed to the cache, not refetched.
+    staleTime: 5 * 60_000,
   });
 }
 
@@ -98,7 +116,11 @@ export function useCurrentKpi() {
     queryKey: ['kpi', c?.serverUrl, c?.companyId],
     queryFn: async () => {
       const today = localDate();
-      const periods = await listFiscalPeriods(c!);
+      const periods = await queryClient.fetchQuery({
+        queryKey: ['fiscal-periods', c?.serverUrl, c?.companyId],
+        queryFn: () => listFiscalPeriods(c!),
+        staleTime: 3600_000,
+      });
       const p =
         periods.find((x) => x.period_start <= today && today <= x.period_end) ??
         [...periods].sort((a, b) => b.period_end.localeCompare(a.period_end))[0];
@@ -140,8 +162,8 @@ export function useToBook() {
     queryKey: ['to-book', c?.serverUrl, c?.companyId, days],
     queryFn: async () => {
       const since = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
-      const rows = await listTransactionsSince(c!, since);
-      return rows.filter((t) => !t.journal_entry_id).sort((a, b) => b.date.localeCompare(a.date));
+      const rows = await listTransactionsSince(c!, since, undefined, { status: 'unbooked' });
+      return rows.sort((a, b) => b.date.localeCompare(a.date));
     },
     enabled: !!c && on,
   });
@@ -171,7 +193,8 @@ export function usePendingOps() {
       }
     },
     enabled: !!c,
-    refetchInterval: 60_000,
+    // The relay pushes new approvals; polling is the fallback, and only while the app is open.
+    refetchInterval: 5 * 60_000,
   });
 }
 
@@ -218,7 +241,10 @@ export function useVatNow() {
   return useQuery({
     queryKey: ['vat-now', c?.serverUrl, c?.companyId],
     queryFn: async () => {
-      const [s, periods] = await Promise.all([getVatPeriodType(c!), listFiscalPeriods(c!)]);
+      const [s, periods] = await Promise.all([
+        getVatPeriodType(c!),
+        queryClient.fetchQuery({ queryKey: ['fiscal-periods', c?.serverUrl, c?.companyId], queryFn: () => listFiscalPeriods(c!), staleTime: 3600_000 }),
+      ]);
       if (!s.vat_registered || !s.moms_period) return null;
       const now = new Date();
       const today = localDate(now);
@@ -243,12 +269,21 @@ export function useSupplierInvoicesToApprove() {
   });
 }
 
+/** Cost accounts for an expense claim: 4xxx-87xx (88xx-89xx are appropriations, tax and the result). */
 export function useCostAccounts() {
-  const c = useConnection();
-  return useQuery({
-    queryKey: ['cost-accounts', c?.serverUrl, c?.companyId],
-    queryFn: () => listCostAccounts(c!),
-    enabled: !!c,
-    staleTime: 3600_000,
-  });
+  const chart = useChart();
+  const data = chart.data?.filter((a) => a.active && /^([4-7]|8[0-7])/.test(a.number)).map(({ number, name }) => ({ number, name }));
+  return { ...chart, data };
+}
+
+/** Take one payment out of the cached missing-receipts lists, instead of refetching them (dozens of calls). */
+export function dropFromMissing(transactionId: string) {
+  queryClient.setQueriesData<Transaction[]>({ queryKey: ['missing'] }, (list) => list?.filter((t) => t.id !== transactionId));
+}
+
+/** Put a payment back (undo), keeping the list's newest-first order. */
+export function restoreToMissing(tx: Transaction) {
+  queryClient.setQueriesData<Transaction[]>({ queryKey: ['missing'] }, (list) =>
+    list && !list.some((t) => t.id === tx.id) ? [...list, tx].sort((a, b) => b.date.localeCompare(a.date)) : list,
+  );
 }

@@ -12,11 +12,13 @@ import { colors, radius, space, type, useHex } from '@/lib/theme';
 
 const sum = (r: Record<string, number>, ...k: string[]) => k.reduce((s, x) => s + (r[x] ?? 0), 0);
 
+const monthYear = new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric' });
+
 function periodName(d: VatDeclaration) {
   const p = d.period;
   if (p.type === 'yearly') return p.start.slice(0, 4) === p.end.slice(0, 4) ? `Year ${p.year}` : `${p.start.slice(0, 4)}/${p.end.slice(0, 4)}`;
   if (p.type === 'quarterly') return `Q${p.period} ${p.year}`;
-  return new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric' }).format(new Date(`${p.start}T12:00:00`));
+  return monthYear.format(new Date(`${p.start}T12:00:00`));
 }
 
 /**

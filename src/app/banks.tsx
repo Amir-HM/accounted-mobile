@@ -72,7 +72,8 @@ function BankCard({ bank: b, now, onRenew }: { bank: BankConnection; now: number
       const r = await syncBankConnection(conn, b.connection_id);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       showToast(r.imported ? `${r.imported} new transaction${r.imported === 1 ? '' : 's'} from ${bank}` : `${bank} is up to date`);
-      void queryClient.invalidateQueries();
+      // New transactions: the lists built from them refresh; nothing else changed.
+      for (const key of ['bank-connections', 'cash-accounts', 'missing', 'to-book', 'kpi']) void queryClient.invalidateQueries({ queryKey: [key] });
     } catch (e) {
       if (e instanceof ApiError && e.code === 'BANK_SYNC_COOLDOWN') showToast(`${bank} synced a moment ago. Try again in a few minutes.`);
       else if (e instanceof ApiError && e.code === 'BANK_RATE_LIMITED') showToast(`${bank} allows only a few syncs a day. It will sync again tonight.`);

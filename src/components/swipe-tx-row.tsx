@@ -10,7 +10,7 @@ import { captureAndQueue, type CaptureMethod } from '@/lib/capture';
 import { formatMoney } from '@/lib/format';
 import { markNoDocumentRequired, unmarkNoDocumentRequired } from '@/lib/api';
 import { loadConnection } from '@/lib/connection';
-import { queryClient, setNoReceiptNeeded } from '@/lib/queries';
+import { setNoReceiptNeeded } from '@/lib/queries';
 import { reportActionError } from '@/lib/scope';
 import { showToast } from '@/lib/toast';
 import { colors, fonts, space, type, useHex } from '@/lib/theme';
@@ -45,17 +45,16 @@ export function hideWithUndo(tx: Pick<Transaction, 'id' | 'merchant_name' | 'des
     { title: 'Why is there no receipt?', message: 'Recorded on the verifikat in Accounted.', options: [...REASONS.map((r) => r.label), 'Cancel'], cancelButtonIndex: REASONS.length },
     async (i) => {
       if (i >= REASONS.length) return;
+      // Hidden here at once, and kept in the cached list so Undo can bring it back without a refetch.
       setNoReceiptNeeded(tx.id, true);
       try {
         await markNoDocumentRequired(conn, je, REASONS[i].reason);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        void queryClient.invalidateQueries({ queryKey: ['missing'] });
         showToast(`${name}: no receipt needed`, 'default', {
           label: 'Undo',
           onPress: async () => {
             setNoReceiptNeeded(tx.id, false);
             await unmarkNoDocumentRequired(conn, je).catch((e) => reportActionError(e, 'Undo'));
-            void queryClient.invalidateQueries({ queryKey: ['missing'] });
           },
         });
       } catch (e) {

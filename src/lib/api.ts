@@ -10,6 +10,8 @@ export class ApiError extends Error {
     public status: number,
     public code: string,
     message: string,
+    /** Seconds the server asked us to wait (Retry-After), on a 429. */
+    public retryAfter?: number,
   ) {
     super(message);
   }
@@ -51,13 +53,15 @@ export async function request<T>(
     // An HTML page here means the URL is not an Accounted server.
   }
   // A 429 the server explains (a bank cooldown, say) keeps its own code; a bare one is our rate limit.
-  if (res.status === 429 && !body?.error?.code) throw new ApiError(429, 'RATE_LIMITED', 'Too many requests right now. Trying again shortly.');
+  const retryAfter = Number(res.headers.get('retry-after')) || undefined;
+  if (res.status === 429 && !body?.error?.code) throw new ApiError(429, 'RATE_LIMITED', 'Too many requests right now. Trying again shortly.', retryAfter);
   if (!res.ok || !body) {
     const e = body?.error;
     throw new ApiError(
       res.status,
       e?.code ?? (body ? 'HTTP_' + res.status : 'NOT_ACCOUNTED'),
       e?.message_en ?? e?.message ?? (body ? `Request failed (${res.status}).` : 'That address did not answer like an Accounted server.'),
+      retryAfter,
     );
   }
   return body as Envelope<T>;
@@ -137,12 +141,17 @@ export const listFiscalPeriods = (c: Connection) =>
 export const getKpi = (c: Connection, periodId: string) =>
   request<Kpi>(c, `/companies/${c.companyId}/reports/kpi?period_id=${periodId}`).then((r) => r.data);
 
-export async function listTransactionsSince(c: Connection, dateFrom: string, cashAccountId?: string): Promise<TransactionRow[]> {
+export async function listTransactionsSince(
+  c: Connection,
+  dateFrom: string,
+  cashAccountId?: string,
+  opts: { status?: 'booked' | 'unbooked'; signal?: AbortSignal } = {},
+): Promise<TransactionRow[]> {
   const out: TransactionRow[] = [];
   let cursor: string | null | undefined;
   for (let page = 0; page < 10; page++) {
-    const q = `limit=100&date_from=${dateFrom}${cashAccountId ? `&cash_account_id=${cashAccountId}` : ''}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`;
-    const r = await request<TransactionRow[]>(c, `/companies/${c.companyId}/transactions?${q}`);
+    const q = `limit=100&date_from=${dateFrom}${cashAccountId ? `&cash_account_id=${cashAccountId}` : ''}${opts.status ? `&status=${opts.status}` : ''}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`;
+    const r = await request<TransactionRow[]>(c, `/companies/${c.companyId}/transactions?${q}`, { signal: opts.signal });
     out.push(...r.data);
     cursor = r.meta?.next_cursor;
     if (!cursor) break;
@@ -150,13 +159,17 @@ export async function listTransactionsSince(c: Connection, dateFrom: string, cas
   return out;
 }
 
-/** journal_entry_id of every verifikat that has underlag (linked=true). */
-export async function listLinkedEntryIds(c: Connection): Promise<Set<string>> {
+/**
+ * Verifikat ids that have a document. Only documents uploaded from `uploadedFrom`
+ * on: a receipt for a payment in the lookback is uploaded around that payment,
+ * so the whole archive does not need reading on every refresh.
+ */
+export async function listLinkedEntryIds(c: Connection, uploadedFrom: string, signal?: AbortSignal): Promise<Set<string>> {
   const ids = new Set<string>();
   let cursor: string | null | undefined;
   for (let page = 0; page < 20; page++) {
-    const q = `linked=true&limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`;
-    const r = await request<{ documents: { journal_entry_id: string | null }[] }>(c, `/companies/${c.companyId}/documents?${q}`);
+    const q = `linked=true&limit=100&uploaded_from=${uploadedFrom}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`;
+    const r = await request<{ documents: { journal_entry_id: string | null }[] }>(c, `/companies/${c.companyId}/documents?${q}`, { signal });
     r.data.documents.forEach((d) => d.journal_entry_id && ids.add(d.journal_entry_id));
     cursor = r.meta?.next_cursor;
     if (!cursor) break;
@@ -164,8 +177,8 @@ export async function listLinkedEntryIds(c: Connection): Promise<Set<string>> {
   return ids;
 }
 
-export const getTransaction = (c: Connection, id: string) =>
-  request<Transaction>(c, `/companies/${c.companyId}/transactions/${id}`).then((r) => r.data);
+export const getTransaction = (c: Connection, id: string, signal?: AbortSignal) =>
+  request<Transaction>(c, `/companies/${c.companyId}/transactions/${id}`, { signal }).then((r) => r.data);
 
 export const attachDocument = (c: Connection, transactionId: string, documentId: string) =>
   request<{ transaction_id: string; document_id: string; journal_entry_id: string | null }>(
@@ -350,16 +363,3 @@ export const approveSupplierInvoice = (c: Connection, id: string) =>
     body: '{}',
     idempotencyKey: `si-approve-${id}`,
   }).then((r) => r.data);
-
-// ---- Chart of accounts: cost accounts for an expense claim ----
-
-export async function listCostAccounts(c: Connection): Promise<{ number: string; name: string }[]> {
-  const r = await request<{ accounts: { account_number: string; account_name: string; is_active?: boolean }[] }>(
-    c,
-    `/companies/${c.companyId}/accounts?limit=2000`,
-  );
-  return r.data.accounts
-    // Costs only: 88xx-89xx are appropriations, tax and the year's result, never an expense.
-    .filter((a) => /^([4-7]|8[0-7])/.test(String(a.account_number)) && a.is_active !== false)
-    .map((a) => ({ number: String(a.account_number), name: a.account_name }));
-}

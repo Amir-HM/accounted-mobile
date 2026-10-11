@@ -11,8 +11,15 @@ export function formatMoney(amount: number, currency = 'SEK'): string {
 }
 
 /** Compact for dashboards: 37 094 kr, no öre. */
+const moneyShort = new Map<string, Intl.NumberFormat>();
+
 export function formatMoneyShort(amount: number, currency = 'SEK'): string {
-  return new Intl.NumberFormat('sv-SE', { style: 'currency', currency, maximumFractionDigits: 0 }).format(amount);
+  let f = moneyShort.get(currency);
+  if (!f) {
+    f = new Intl.NumberFormat('sv-SE', { style: 'currency', currency, maximumFractionDigits: 0 });
+    moneyShort.set(currency, f);
+  }
+  return f.format(amount);
 }
 
 const dayFmt = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' });
@@ -77,8 +84,22 @@ function titleCase(s: string) {
   return s.toLowerCase().replace(/(^|[\s(./&-])([a-zåäö])/g, (_, p, c) => p + c.toUpperCase());
 }
 
+const tidied = new Map<string, string>();
+
+/** Pure, so cached: lists call it for every row on every render. */
 export function tidyMerchant(raw: string | null | undefined): string {
-  let s = (raw ?? '').replace(/\s+/g, ' ').trim();
+  const key = raw ?? '';
+  let hit = tidied.get(key);
+  if (hit === undefined) {
+    hit = tidyUncached(key);
+    if (tidied.size > 2000) tidied.clear();
+    tidied.set(key, hit);
+  }
+  return hit;
+}
+
+function tidyUncached(raw: string): string {
+  let s = raw.replace(/\s+/g, ' ').trim();
   if (!s) return 'Unknown';
   for (const [re, name] of KNOWN) {
     const m = s.match(re);
