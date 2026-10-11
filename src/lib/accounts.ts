@@ -1,9 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
-import Storage from 'expo-sqlite/kv-store';
-import { useSyncExternalStore } from 'react';
 
 import { request, type CashAccount } from './api';
 import { useConnection, type Connection } from './connection';
+import { deviceStore } from './device-store';
 
 /**
  * Human names for bank accounts. The cash-account `name` is the account
@@ -61,28 +60,18 @@ export function useLedgerNames() {
 }
 
 // ---- Names set on this iPhone ----
-const NICK_KEY = 'accounted.accountNames';
-let nicknames: Record<string, string> = JSON.parse(Storage.getItemSync(NICK_KEY) ?? '{}');
-const nickListeners = new Set<() => void>();
+const nicknames = deviceStore<Record<string, string>>('accounted.accountNames', {});
 
 export function setNickname(cashAccountId: string, name: string | null) {
-  const next = { ...nicknames };
-  if (name && name.trim()) next[cashAccountId] = name.trim();
-  else delete next[cashAccountId];
-  nicknames = next;
-  Storage.setItemSync(NICK_KEY, JSON.stringify(nicknames));
-  nickListeners.forEach((l) => l());
+  nicknames.set((prev) => {
+    const next = { ...prev };
+    if (name && name.trim()) next[cashAccountId] = name.trim();
+    else delete next[cashAccountId];
+    return next;
+  });
 }
 
-export function useNicknames(): Record<string, string> {
-  return useSyncExternalStore(
-    (l) => {
-      nickListeners.add(l);
-      return () => nickListeners.delete(l);
-    },
-    () => nicknames,
-  );
-}
+export const useNicknames = nicknames.use;
 
 export type NamedAccount = CashAccount & { title: string; bank: string | null; ledgerName: string | null };
 

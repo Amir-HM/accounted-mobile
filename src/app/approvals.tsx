@@ -1,5 +1,5 @@
 import * as Haptics from 'expo-haptics';
-import { Bot, ShieldAlert } from 'lucide-react-native';
+import { Bot, CircleCheck, ShieldAlert } from 'lucide-react-native';
 import { useState } from 'react';
 import { Alert, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
@@ -12,7 +12,6 @@ import { queryClient, usePendingOps } from '@/lib/queries';
 import { reportActionError } from '@/lib/scope';
 import { showToast } from '@/lib/toast';
 import { colors, radius, space, type, useHex } from '@/lib/theme';
-import { CircleCheck } from 'lucide-react-native';
 
 const RISK: Record<PendingOp['risk_level'], string> = { low: 'Low risk', medium: 'Medium risk', high: 'High risk: cannot be undone' };
 

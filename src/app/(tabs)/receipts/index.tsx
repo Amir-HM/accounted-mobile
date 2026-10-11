@@ -1,9 +1,8 @@
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
-import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { CircleCheck, Plus, ScanLine } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
-import { ActionSheetIOS, Alert, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { RefreshControl, StyleSheet, View } from 'react-native';
 
 import { CaptureRow } from '@/components/capture-row';
 import { SwipeTxRow } from '@/components/swipe-tx-row';
@@ -13,7 +12,7 @@ import type { Transaction } from '@/lib/api';
 import { captureUnlinked } from '@/lib/capture';
 import { useHiddenIds, useMissingReceipts } from '@/lib/queries';
 import { useCaptures, type Capture } from '@/lib/queue';
-import { colors, fonts, space, type } from '@/lib/theme';
+import { colors, fonts, space } from '@/lib/theme';
 
 type Item =
   | { kind: 'label'; key: string; title: string; right?: string }
@@ -107,8 +106,6 @@ export default function Receipts() {
     </View>
   );
 }
-
-const isoDay = (d: string) => d.slice(0, 10);
 
 function ItemView({ item, view }: { item: Item; view: 'missing' | 'attached' }) {
   switch (item.kind) {

@@ -1,5 +1,6 @@
 import { router } from 'expo-router';
 import { ArrowLeftRight, Bot, ChevronRight, FileWarning, ScanLine, Upload } from 'lucide-react-native';
+import { useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -49,6 +50,7 @@ export default function Overview() {
   const conn = useConnection();
   const hex = useHex();
   const insets = useSafeAreaInsets();
+  const [now] = useState(() => Date.now()); // read once per visit, not on every render
   const accounts = useCashAccounts();
   const kpi = useCurrentKpi();
   const missing = useMissingReceipts();
@@ -71,7 +73,7 @@ export default function Overview() {
     .filter(Boolean)
     .sort()
     .at(-1);
-  const staleHours = latest ? Math.round((Date.now() - new Date(latest).getTime()) / 3600_000) : 0;
+  const staleHours = latest ? Math.round((now - new Date(latest).getTime()) / 3600_000) : 0;
 
   const refreshing = accounts.isRefetching || kpi.isRefetching || missing.isRefetching;
   const refresh = () => Promise.all([accounts.refetch(), kpi.refetch(), missing.refetch()]);

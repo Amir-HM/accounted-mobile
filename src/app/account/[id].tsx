@@ -31,11 +31,12 @@ export default function AccountScreen() {
   const missing = useMissingReceipts();
   const [days, setDays] = useState(STEP_DAYS);
   const [showIban, setShowIban] = useState(false);
+  const [now] = useState(() => Date.now()); // read once per visit, not on every render
 
   const raw = accounts.data?.find((a) => a.cash_account_id === id);
   const a = raw ? nameAccount(raw, ledger.data, nicks) : undefined;
 
-  const since = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
+  const since = new Date(now - days * 86400_000).toISOString().slice(0, 10);
   const txs = useQuery({
     queryKey: ['account-tx', conn?.serverUrl, id, days],
     queryFn: () => listTransactionsSince(conn!, since, id),

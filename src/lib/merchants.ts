@@ -1,26 +1,14 @@
 import * as Haptics from 'expo-haptics';
-import Storage from 'expo-sqlite/kv-store';
-import { useSyncExternalStore } from 'react';
 import { Alert } from 'react-native';
 
+import { deviceStore } from './device-store';
 import { tidyMerchant } from './format';
 
 /**
  * Names you give a merchant on this iPhone. They apply to every payment with
  * the same bank text and win over the built-in plain-English names.
  */
-const KEY = 'accounted.merchantNames';
-let names: Record<string, string> = load();
-const listeners = new Set<() => void>();
-
-function load(): Record<string, string> {
-  try {
-    const v = JSON.parse(Storage.getItemSync(KEY) ?? '{}');
-    return v && typeof v === 'object' ? v : {};
-  } catch {
-    return {}; // a damaged value must not stop the app from starting
-  }
-}
+const names = deviceStore<Record<string, string>>('accounted.merchantNames', {});
 
 // Texts where the number IS the counterparty (a phone number, a giro number,
 // a named transfer): renaming one must not rename all of them.
@@ -45,33 +33,23 @@ export function merchantKey(raw: string | null | undefined) {
 }
 
 /** The display name for a bank text: your name if you set one, else the built-in one. */
-export function merchantName(raw: string | null | undefined, own: Record<string, string> = names): string {
+export function merchantName(raw: string | null | undefined, own: Record<string, string> = names.get()): string {
   return own[merchantKey(raw)] ?? tidyMerchant(raw);
 }
 
 export function setMerchantName(raw: string | null | undefined, name: string | null) {
   const k = merchantKey(raw);
   if (!k) return;
-  const next = { ...names };
-  if (name && name.trim()) next[k] = name.trim();
-  else delete next[k];
-  names = next;
-  Storage.setItemSync(KEY, JSON.stringify(names));
-  listeners.forEach((l) => l());
+  names.set((prev) => {
+    const next = { ...prev };
+    if (name && name.trim()) next[k] = name.trim();
+    else delete next[k];
+    return next;
+  });
 }
-
-function subscribe(l: () => void) {
-  listeners.add(l);
-  return () => {
-    listeners.delete(l);
-  };
-}
-const snapshot = () => names;
 
 /** Subscribe a screen to renames; pass the result to merchantName so memoised screens update. */
-export function useMerchantNames(): Record<string, string> {
-  return useSyncExternalStore(subscribe, snapshot);
-}
+export const useMerchantNames = names.use;
 
 /** Ask for a name; Reset goes back to the built-in one. */
 export function promptMerchantName(raw: string | null | undefined, current: string) {
@@ -81,7 +59,7 @@ export function promptMerchantName(raw: string | null | undefined, current: stri
     'Used for every payment with this bank text, on this iPhone.',
     [
       { text: 'Cancel', style: 'cancel' },
-      ...(names[merchantKey(raw)] ? [{ text: 'Reset', style: 'destructive' as const, onPress: () => setMerchantName(raw, null) }] : []),
+      ...(names.get()[merchantKey(raw)] ? [{ text: 'Reset', style: 'destructive' as const, onPress: () => setMerchantName(raw, null) }] : []),
       {
         text: 'Save',
         isPreferred: true,

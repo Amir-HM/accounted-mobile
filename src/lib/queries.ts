@@ -1,6 +1,4 @@
 import { QueryClient, useQuery } from '@tanstack/react-query';
-import Storage from 'expo-sqlite/kv-store';
-import { useSyncExternalStore } from 'react';
 
 import {
   ApiError,
@@ -15,6 +13,7 @@ import {
 import { useConnection, type Connection } from './connection';
 import { listPending, suggestCategories } from './mcp';
 import { usePref } from './prefs';
+import { deviceStore, numberCodec } from './device-store';
 
 const rateLimited = (e: unknown) => e instanceof ApiError && e.status === 429;
 
@@ -101,48 +100,21 @@ export function useCurrentKpi() {
 
 // ---- "No receipt needed": a device-local dismissal, never sent to the books ----
 
-const HIDDEN_KEY = 'accounted.noReceiptNeeded';
-let hidden: string[] = JSON.parse(Storage.getItemSync(HIDDEN_KEY) ?? '[]');
-const hiddenListeners = new Set<() => void>();
+const hiddenIds = deviceStore<string[]>('accounted.noReceiptNeeded', []);
 
 export function setNoReceiptNeeded(id: string, value: boolean) {
-  hidden = value ? [...new Set([...hidden, id])] : hidden.filter((x) => x !== id);
-  Storage.setItemSync(HIDDEN_KEY, JSON.stringify(hidden));
-  hiddenListeners.forEach((l) => l());
+  hiddenIds.set((prev) => (value ? [...new Set([...prev, id])] : prev.filter((x) => x !== id)));
 }
 
-export function useHiddenIds(): string[] {
-  return useSyncExternalStore(
-    (l) => {
-      hiddenListeners.add(l);
-      return () => hiddenListeners.delete(l);
-    },
-    () => hidden,
-  );
-}
+export const useHiddenIds = hiddenIds.use;
 
 // ---- How far back "missing a receipt" looks (device setting) ----
 
-const LOOKBACK_KEY = 'accounted.lookbackDays';
 export const LOOKBACK_OPTIONS = [30, 90, 365] as const;
-let lookback = Number(Storage.getItemSync(LOOKBACK_KEY) ?? 30);
-const lookbackListeners = new Set<() => void>();
+const lookbackDays = deviceStore('accounted.lookbackDays', 30, numberCodec);
 
-export function setLookbackDays(days: number) {
-  lookback = days;
-  Storage.setItemSync(LOOKBACK_KEY, String(days));
-  lookbackListeners.forEach((l) => l());
-}
-
-export function useLookbackDays(): number {
-  return useSyncExternalStore(
-    (l) => {
-      lookbackListeners.add(l);
-      return () => lookbackListeners.delete(l);
-    },
-    () => lookback,
-  );
-}
+export const setLookbackDays = (days: number) => lookbackDays.set(days);
+export const useLookbackDays = lookbackDays.use;
 
 export const lookbackLabel = (d: number) => (d >= 365 ? 'Last 12 months' : `Last ${d} days`);
 

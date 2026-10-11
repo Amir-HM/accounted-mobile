@@ -1,10 +1,9 @@
 import Constants from 'expo-constants';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
-import Storage from 'expo-sqlite/kv-store';
-import { useSyncExternalStore } from 'react';
 
 import type { Connection } from './connection';
+import { deviceStore, stringCodec } from './device-store';
 
 /**
  * "Snap the receipt" notifications. The relay (infra/push-relay) watches the
@@ -15,19 +14,9 @@ import type { Connection } from './connection';
 export const PUSH_RELAY = (Constants.expoConfig?.extra?.pushRelay as string | undefined) ?? '';
 const KEY = 'accounted.pushToken';
 
-let token: string | null = Storage.getItemSync(KEY);
-const listeners = new Set<() => void>();
-const emit = () => listeners.forEach((l) => l());
+const token = deviceStore<string | null>(KEY, null, stringCodec);
 
-export function usePushEnabled(): boolean {
-  return useSyncExternalStore(
-    (l) => {
-      listeners.add(l);
-      return () => listeners.delete(l);
-    },
-    () => token != null,
-  );
-}
+export const usePushEnabled = () => token.use() != null;
 
 async function relay(path: '/register' | '/unregister', conn: Connection, t: string) {
   const r = await fetch(`${PUSH_RELAY}${path}`, {
@@ -47,15 +36,11 @@ export async function enablePush(conn: Connection): Promise<void> {
   const projectId = Constants.expoConfig?.extra?.eas?.projectId as string | undefined;
   const { data } = await Notifications.getExpoPushTokenAsync({ projectId });
   await relay('/register', conn, data);
-  token = data;
-  Storage.setItemSync(KEY, data);
-  emit();
+  token.set(data);
 }
 
 export async function disablePush(conn: Connection | null): Promise<void> {
-  const t = token;
-  token = null;
-  Storage.removeItemSync(KEY);
-  emit();
+  const t = token.get();
+  token.set(null);
   if (t && conn) await relay('/unregister', conn, t).catch(() => {});
 }

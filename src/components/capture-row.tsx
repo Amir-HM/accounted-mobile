@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { CircleAlert, CircleCheck, FileText } from 'lucide-react-native';
-import { View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { Row } from '@/components/ui';
 import { formatMoney, formatRelative } from '@/lib/format';
@@ -62,7 +62,12 @@ export function CaptureRow({ capture: c, onPress, last }: { capture: Capture; on
   return (
     <View>
       <Row
-        leading={<CaptureThumb capture={c} />}
+        leading={
+          <View>
+            <CaptureThumb capture={c} />
+            {badge ? <View style={[st.badge, { backgroundColor: hex.background }]}>{badge}</View> : null}
+          </View>
+        }
         title={c.transaction ? c.transaction.label : c.fileName}
         meta={status(c)}
         value={c.transaction ? formatMoney(c.transaction.amount, c.transaction.currency) : undefined}
@@ -74,3 +79,8 @@ export function CaptureRow({ capture: c, onPress, last }: { capture: Capture; on
     </View>
   );
 }
+
+const st = StyleSheet.create({
+  // The reading's verdict sits on the thumbnail's corner, on a paper disc.
+  badge: { position: 'absolute', right: -6, bottom: -6, borderRadius: 999, padding: 1 },
+});

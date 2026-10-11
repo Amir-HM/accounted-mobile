@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import { router, useLocalSearchParams } from 'expo-router';
 import { CircleAlert, CircleCheck } from 'lucide-react-native';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { ActionSheetIOS, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { Reveal, Skeleton } from '@/components/motion';
@@ -50,6 +50,9 @@ const VATS: { key: Vat; label: string }[] = [
   { key: 'export', label: 'Export' },
 ];
 
+type Choice = { picked: number | null; category: string | null; account: string | null; vat: Vat | null };
+const EMPTY: Choice = { picked: null, category: null, account: null, vat: null };
+
 const vatLabel = (v?: string | null) => VATS.find((x) => x.key === v)?.label ?? '–';
 const catLabel = (c?: string | null) => CATEGORIES.find((x) => x.key === c)?.label ?? c ?? '–';
 
@@ -64,10 +67,8 @@ export default function BookPayment() {
   const sugg = useSuggestions(id);
   const capture = useCaptures().find((c) => c.transaction?.id === id && c.state === 'done');
 
-  const [picked, setPicked] = useState<number | null>(null);
-  const [category, setCategory] = useState<string | null>(null);
-  const [account, setAccount] = useState<string | null>(null);
-  const [vat, setVat] = useState<Vat | null>(null);
+  // What you chose; until you touch anything, the server's first proposal is shown.
+  const [choice, setChoice] = useState<Choice | null>(null);
   const [busy, setBusy] = useState(false);
 
   const t = tx.data;
@@ -76,15 +77,18 @@ export default function BookPayment() {
   const reverseHint =
     !!readVat && (readVat.invoice?.currency ?? 'SEK') !== 'SEK' && (readVat.totals?.vatAmount ?? 0) === 0;
 
-  useEffect(() => {
-    const first = sugg.data?.[0];
-    if (picked == null && first) {
-      setPicked(0);
-      setCategory(first.categorize_args.category ?? null);
-      setAccount(first.categorize_args.account_override ?? first.account ?? null);
-      setVat((reverseHint ? 'reverse_charge' : (first.categorize_args.vat_treatment as Vat)) ?? null);
-    }
-  }, [sugg.data, picked, reverseHint]);
+  const first = sugg.data?.[0];
+  const proposed: Choice | null = first
+    ? {
+        picked: 0,
+        category: first.categorize_args.category ?? null,
+        account: first.categorize_args.account_override ?? first.account ?? null,
+        vat: (reverseHint ? 'reverse_charge' : (first.categorize_args.vat_treatment as Vat)) ?? null,
+      }
+    : null;
+  const current: Choice = choice ?? proposed ?? EMPTY;
+  const { picked, category, account, vat } = current;
+  const update = (p: Partial<Choice>) => setChoice({ ...current, ...p });
 
   if (!t) return <View style={{ flex: 1, backgroundColor: colors.background }}><TopBar title="Book payment" back /></View>;
   const out = t.amount < 0;
@@ -93,25 +97,25 @@ export default function BookPayment() {
   function choose(i: number) {
     const p = sugg.data![i];
     Haptics.selectionAsync();
-    setPicked(i);
-    setCategory(p.categorize_args.category ?? null);
-    setAccount(p.categorize_args.account_override ?? p.account ?? null);
-    setVat((p.categorize_args.vat_treatment as Vat) ?? null);
+    setChoice({
+      picked: i,
+      category: p.categorize_args.category ?? null,
+      account: p.categorize_args.account_override ?? p.account ?? null,
+      vat: (p.categorize_args.vat_treatment as Vat) ?? null,
+    });
   }
 
   function pickCategory() {
     const list = CATEGORIES.filter((c) => c.out === out);
     ActionSheetIOS.showActionSheetWithOptions({ title: 'Category', options: [...list.map((c) => c.label), 'Cancel'], cancelButtonIndex: list.length }, (i) => {
       if (i >= list.length) return;
-      setPicked(null);
-      setCategory(list[i].key);
-      setAccount(null); // the category decides the account
+      update({ picked: null, category: list[i].key, account: null }); // the category decides the account
     });
   }
 
   function pickVat() {
     ActionSheetIOS.showActionSheetWithOptions({ title: 'VAT', options: [...VATS.map((v) => v.label), 'Cancel'], cancelButtonIndex: VATS.length }, (i) => {
-      if (i < VATS.length) setVat(VATS[i].key);
+      if (i < VATS.length) update({ vat: VATS[i].key });
     });
   }
 
@@ -211,7 +215,7 @@ export default function BookPayment() {
           <Row title="VAT" value={vatLabel(vat)} valueTone={vat ? 'default' : 'muted'} onPress={pickVat} last />
           {reverseHint && vat !== 'reverse_charge' ? (
             <View style={{ paddingTop: space(3) }}>
-              <Attn action="Use reverse charge" onAction={() => setVat('reverse_charge')}>
+              <Attn action="Use reverse charge" onAction={() => update({ vat: 'reverse_charge' })}>
                 The receipt is in a foreign currency with 0% VAT: usually reverse charge.
               </Attn>
             </View>
