@@ -8,7 +8,7 @@ import { Skeleton } from '@/components/motion';
 import { Attn, Button, EmptyState, Segmented, TopBar } from '@/components/ui';
 import { ApiError, type Invoice } from '@/lib/api';
 import { clearConnection, useConnection } from '@/lib/connection';
-import { formatDay, formatMoney } from '@/lib/format';
+import { formatDay, formatMoney, localDate } from '@/lib/format';
 import { isOverdue, queryClient, useInvoices } from '@/lib/queries';
 import { colors, fonts, space, type } from '@/lib/theme';
 
@@ -20,17 +20,20 @@ type View_ = 'unpaid' | 'paid';
  */
 export default function Invoices() {
   const conn = useConnection();
-  const q = useInvoices();
   const [view, setView] = useState<View_>('unpaid');
-  const [today] = useState(() => new Date().toISOString().slice(0, 10));
+  const unpaidQ = useInvoices('unpaid');
+  const paidQ = useInvoices('paid', view === 'paid'); // fetched only when you look
+  const q = view === 'unpaid' ? unpaidQ : paidQ;
+  const [today] = useState(() => localDate());
 
-  const all = (q.data?.invoices ?? []).filter((i) => i.status !== 'draft' && i.status !== 'cancelled');
-  const unpaid = all
-    .filter((i) => i.remaining_amount > 0 && i.status !== 'credited')
+  const unpaid = (unpaidQ.data?.invoices ?? [])
+    .filter((i) => i.remaining_amount > 0)
     .sort((a, b) => Number(isOverdue(b, today)) - Number(isOverdue(a, today)) || a.due_date.localeCompare(b.due_date));
-  const paid = all.filter((i) => i.status === 'paid').sort((a, b) => (b.paid_at ?? '').localeCompare(a.paid_at ?? ''));
+  const paid = (paidQ.data?.invoices ?? []).sort((a, b) => (b.paid_at ?? '').localeCompare(a.paid_at ?? ''));
+  const all = [...unpaid, ...paid];
   const rows = view === 'unpaid' ? unpaid : paid;
   const owed = unpaid.filter((i) => i.currency === 'SEK').reduce((s, i) => s + i.remaining_amount, 0);
+  const foreign = unpaid.filter((i) => i.currency !== 'SEK').length;
   const noScope = q.error instanceof ApiError && q.error.code === 'INSUFFICIENT_SCOPE';
 
   return (
@@ -66,7 +69,7 @@ export default function Invoices() {
                     <Text style={type.label}>Customers owe you</Text>
                     <Text style={[type.number, { fontSize: 36, lineHeight: 42 }]}>{formatMoney(owed)}</Text>
                     <Text style={type.meta}>
-                      {`${unpaid.length} unpaid${unpaid.some((i) => isOverdue(i, today)) ? ` · ${unpaid.filter((i) => isOverdue(i, today)).length} overdue` : ''}`}
+                      {`${unpaid.length} unpaid${unpaid.some((i) => isOverdue(i, today)) ? ` · ${unpaid.filter((i) => isOverdue(i, today)).length} overdue` : ''}${foreign ? ` · ${foreign} in other currencies not in the total` : ''}`}
                     </Text>
                   </View>
                 ) : null}
@@ -75,12 +78,12 @@ export default function Invoices() {
                   value={view}
                   onChange={setView}
                   options={[
-                    { key: 'unpaid', label: 'Unpaid', count: q.isPending ? undefined : unpaid.length },
-                    { key: 'paid', label: 'Paid', count: q.isPending ? undefined : paid.length },
+                    { key: 'unpaid', label: 'Unpaid', count: unpaidQ.isPending ? undefined : unpaid.length },
+                    { key: 'paid', label: 'Paid', count: paidQ.data ? paid.length : undefined },
                   ]}
                 />
-                {q.data?.preRegister && q.data.coversFrom ? (
-                  <Text style={type.meta}>{`Only invoices made in Accounted, from ${formatDay(q.data.coversFrom)}. Earlier ones are in the books but not listed here.`}</Text>
+                {unpaidQ.data?.preRegister && unpaidQ.data.coversFrom ? (
+                  <Text style={type.meta}>{`Only invoices made in Accounted, from ${formatDay(unpaidQ.data.coversFrom)}. Earlier ones are in the books but not listed here.`}</Text>
                 ) : null}
               </>
             )}

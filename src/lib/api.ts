@@ -229,7 +229,7 @@ export const unmarkNoDocumentRequired = (c: Connection, journalEntryId: string) 
 
 export type BankConnection = {
   connection_id: string;
-  bank: string;
+  bank: string | null;
   status: 'active' | 'error' | 'expired' | 'pending' | string;
   since: string | null;
   last_synced_at: string | null;
@@ -265,19 +265,31 @@ export type Invoice = {
   paid_at: string | null;
 };
 
-export async function listInvoices(c: Connection): Promise<{ invoices: Invoice[]; coversFrom: string | null; preRegister: boolean }> {
+type Coverage = { covers_from: string | null; has_pre_register_invoices: boolean };
+
+async function invoicesWithStatus(c: Connection, status: InvoiceStatus) {
   const out: Invoice[] = [];
   let cursor: string | null | undefined;
-  let coverage: { covers_from: string | null; has_pre_register_invoices: boolean } | undefined;
+  let coverage: Coverage | undefined;
   for (let page = 0; page < 5; page++) {
-    const q = new URLSearchParams({ document_type: 'invoice', limit: '100', ...(cursor ? { cursor } : {}) });
+    const q = new URLSearchParams({ document_type: 'invoice', status, limit: '100', ...(cursor ? { cursor } : {}) });
     const r = await request<Invoice[]>(c, `/companies/${c.companyId}/invoices?${q}`);
     out.push(...r.data);
     coverage ??= r.meta?.coverage;
     cursor = r.meta?.next_cursor;
     if (!cursor) break;
   }
-  return { invoices: out, coversFrom: coverage?.covers_from ?? null, preRegister: !!coverage?.has_pre_register_invoices };
+  return { out, coverage };
+}
+
+/** Invoices in the given statuses, each status fetched on its own so nothing old drops off a page limit. */
+export async function listInvoices(
+  c: Connection,
+  statuses: InvoiceStatus[],
+): Promise<{ invoices: Invoice[]; coversFrom: string | null; preRegister: boolean }> {
+  const parts = await Promise.all(statuses.map((s) => invoicesWithStatus(c, s)));
+  const coverage = parts.find((p) => p.coverage)?.coverage;
+  return { invoices: parts.flatMap((p) => p.out), coversFrom: coverage?.covers_from ?? null, preRegister: !!coverage?.has_pre_register_invoices };
 }
 
 // ---- VAT return (momsdeklaration) ----
@@ -322,14 +334,14 @@ export type SupplierInvoice = {
   is_credit_note: boolean;
 };
 
-/** Registered and overdue invoices: the ones an approval can still apply to. */
+/**
+ * Invoices waiting for an approval. Only `registered`: an approved invoice
+ * past its due date goes back to `overdue`, and the list does not say whether
+ * it was approved, so overdue ones would never leave this list.
+ */
 export async function listSupplierInvoicesToApprove(c: Connection): Promise<SupplierInvoice[]> {
-  const [registered, overdue] = await Promise.all(
-    (['registered', 'overdue'] as const).map((status) =>
-      request<SupplierInvoice[]>(c, `/companies/${c.companyId}/supplier-invoices?status=${status}&limit=100`).then((r) => r.data),
-    ),
-  );
-  return [...registered, ...overdue].filter((i) => !i.is_credit_note);
+  const r = await request<SupplierInvoice[]>(c, `/companies/${c.companyId}/supplier-invoices?status=registered&limit=100`);
+  return r.data.filter((i) => !i.is_credit_note);
 }
 
 export const approveSupplierInvoice = (c: Connection, id: string) =>
@@ -347,6 +359,7 @@ export async function listCostAccounts(c: Connection): Promise<{ number: string;
     `/companies/${c.companyId}/accounts?limit=2000`,
   );
   return r.data.accounts
-    .filter((a) => /^[4-8]/.test(String(a.account_number)) && a.is_active !== false)
+    // Costs only: 88xx-89xx are appropriations, tax and the year's result, never an expense.
+    .filter((a) => /^([4-7]|8[0-7])/.test(String(a.account_number)) && a.is_active !== false)
     .map((a) => ({ number: String(a.account_number), name: a.account_name }));
 }

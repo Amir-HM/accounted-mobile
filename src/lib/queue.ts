@@ -46,7 +46,15 @@ export type Capture = {
   attachedAt?: string;
   attempts: number;
   error?: string;
+  /** Not before this time: failed uploads back off instead of retrying every minute. */
+  nextAttemptAt?: string;
+  /** Server and company it was captured for; it never uploads anywhere else. */
+  owner?: string;
+  /** Sent as an expense claim (utlägg): no longer matched to bank payments, not claimable twice. */
+  claimedAt?: string;
 };
+
+const ownerOf = (c: Pick<Connection, 'serverUrl' | 'companyId'>) => `${c.serverUrl}|${c.companyId}`;
 
 const KEY = 'accounted.captures';
 const MAX_BYTES = 10 * 1024 * 1024; // server limit (DOC_UPLOAD_TOO_LARGE)
@@ -153,6 +161,7 @@ export async function enqueue(input: {
     transaction: input.transaction,
     state: 'queued',
     attempts: 0,
+    ...(loadConnection() ? { owner: ownerOf(loadConnection()!) } : {}),
   };
   commit([capture, ...items]);
   void runQueue();
@@ -161,12 +170,12 @@ export async function enqueue(input: {
 
 /** Link an already archived capture to a transaction (the "match later" path). */
 export function assignTransaction(id: string, transaction: NonNullable<Capture['transaction']>) {
-  patch(id, { transaction, attachedAt: undefined, state: 'queued', error: undefined });
+  patch(id, { transaction, attachedAt: undefined, state: 'queued', error: undefined, nextAttemptAt: undefined });
   void runQueue();
 }
 
 export function retry(id: string) {
-  patch(id, { state: 'queued', error: undefined });
+  patch(id, { state: 'queued', error: undefined, nextAttemptAt: undefined }); // a tap retries now
   void runQueue();
 }
 
@@ -262,7 +271,16 @@ async function work() {
   const conn = loadConnection();
   if (!conn) return;
   prune();
-  for (const c of items.filter((x) => x.state === 'queued' || x.state === 'uploading' || x.state === 'attaching')) {
+  const me = ownerOf(conn);
+  const now = Date.now();
+  const due = items.filter(
+    (x) =>
+      (x.state === 'queued' || x.state === 'uploading' || x.state === 'attaching') &&
+      // A receipt captured for another server or company waits for that one to be connected again.
+      (!x.owner || x.owner === me) &&
+      (!x.nextAttemptAt || new Date(x.nextAttemptAt).getTime() <= now),
+  );
+  for (const c of due) {
     try {
       let documentId = c.documentId;
       if (!documentId) {
@@ -295,7 +313,7 @@ async function work() {
         await attachDocument(conn, c.transaction.id, documentId);
         patch(c.id, { attachedAt: new Date().toISOString() });
       }
-      patch(c.id, { state: 'done', error: undefined });
+      patch(c.id, { state: 'done', error: undefined, nextAttemptAt: undefined, uploadUrl: undefined });
       const latest = items.find((x) => x.id === c.id);
       const v = verify(latest?.extraction, c.transaction);
       showToast(
@@ -312,7 +330,13 @@ async function work() {
       setProgress(c.id, null);
       const msg = e instanceof Error ? e.message : String(e);
       const failedHard = !retriable(e);
-      patch(c.id, { state: failedHard ? 'failed' : 'queued', error: msg });
+      // Back off: 30 s, 1, 2, 4 … minutes, at most 30 minutes between tries.
+      const wait = Math.min(30 * 60_000, 30_000 * 2 ** Math.max(0, (items.find((x) => x.id === c.id)?.attempts ?? 1) - 1));
+      patch(c.id, {
+        state: failedHard ? 'failed' : 'queued',
+        error: msg,
+        nextAttemptAt: failedHard ? undefined : new Date(Date.now() + wait).toISOString(),
+      });
       if (failedHard) showToast('Upload failed. Keep the paper receipt.', 'error');
       if (e instanceof ApiError && e.status === 0) break; // offline: stop, retry on reconnect
     }
@@ -325,6 +349,11 @@ function prune() {
   if (!old.length) return;
   old.forEach(removeLocal);
   commit(items.filter((c) => !old.includes(c)));
+}
+
+/** Mark a receipt as sent for an expense claim. */
+export function markClaimed(id: string) {
+  patch(id, { claimedAt: new Date().toISOString() });
 }
 
 export const pendingCount = (list: Capture[]) => list.filter((c) => c.state !== 'done').length;

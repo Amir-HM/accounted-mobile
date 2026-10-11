@@ -237,7 +237,7 @@ export default function BookPayment() {
                 variant="outline"
                 title="Add"
                 onPress={() =>
-                  router.push({ pathname: '/add', params: { txId: t.id, label: name, amount: String(t.amount), currency: t.currency, date: t.date } })
+                  router.push({ pathname: '/add', params: { txId: t.id } })
                 }
               />
             ) : null}

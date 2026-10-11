@@ -12,7 +12,7 @@ import { useNamedAccounts } from '@/lib/accounts';
 import { useReceiptMatches } from '@/lib/matches';
 import { ApiError, type Kpi } from '@/lib/api';
 import { useConnection } from '@/lib/connection';
-import { formatMoney, formatMoneyShort, maskIban } from '@/lib/format';
+import { formatMoney, formatMoneyShort, localDate, maskIban } from '@/lib/format';
 import { usePref } from '@/lib/prefs';
 import { bankNeedsAttention, isOverdue, useBankConnections, useCashAccounts, useInvoices, useSupplierInvoicesToApprove, useCurrentKpi, useHiddenIds, useMissingReceipts, usePendingOps, useToBook } from '@/lib/queries';
 import { pendingCount, useCaptures } from '@/lib/queue';
@@ -78,15 +78,15 @@ export default function Overview() {
     .at(-1);
   const staleHours = latest ? Math.round((now - new Date(latest).getTime()) / 3600_000) : 0;
   const brokenBanks = (banks.data ?? []).filter((b) => bankNeedsAttention(b, now));
-  const todayIso = new Date(now).toISOString().slice(0, 10);
-  const unpaidInvoices = (invoices.data?.invoices ?? []).filter((i) => i.remaining_amount > 0 && !['draft', 'cancelled', 'credited'].includes(i.status));
+  const todayIso = localDate(new Date(now));
+  const unpaidInvoices = (invoices.data?.invoices ?? []).filter((i) => i.remaining_amount > 0);
   const overdueInvoices = unpaidInvoices.filter((i) => isOverdue(i, todayIso));
 
   const todos: Todo[] = [];
   if (matches.length) todos.push({ key: 'matches', label: `${matches.length} to attach`, icon: Link2, tone: 'attn', onPress: () => router.navigate('/receipts') });
   if (missingCount) todos.push({ key: 'missing', label: `${missingCount} receipt${missingCount === 1 ? '' : 's'}`, icon: FileWarning, tone: 'attn', onPress: () => router.navigate('/receipts') });
   if (approvals) todos.push({ key: 'approvals', label: `${approvals} to approve`, icon: Bot, tone: 'attn', onPress: () => router.push('/approvals') });
-  if (brokenBanks.length) todos.push({ key: 'banks', label: brokenBanks.length === 1 ? brokenBanks[0].bank : `${brokenBanks.length} banks`, icon: Landmark, tone: 'attn', onPress: () => router.push('/banks') });
+  if (brokenBanks.length) todos.push({ key: 'banks', label: brokenBanks.length === 1 ? (brokenBanks[0].bank ?? 'Bank') : `${brokenBanks.length} banks`, icon: Landmark, tone: 'attn', onPress: () => router.push('/banks') });
   if (overdueInvoices.length) todos.push({ key: 'overdue', label: `${overdueInvoices.length} overdue`, icon: FileText, tone: 'attn', onPress: () => router.push('/invoices') });
   if (bookOn && toBook.data?.length) todos.push({ key: 'book', label: `${toBook.data.length} to book`, icon: ArrowLeftRight, onPress: () => router.push('/to-book') });
   if (failed) todos.push({ key: 'failed', label: `${failed} upload${failed === 1 ? '' : 's'} failed`, icon: Upload, tone: 'error', onPress: () => router.navigate('/receipts') });
@@ -98,7 +98,7 @@ export default function Overview() {
   const k = kpi.data?.kpi;
   const fy = kpi.data ? fiscalYearLabel(kpi.data.period.period_start, kpi.data.period.period_end) : '';
   // Before next year's period exists, the latest one shown has ended: no "so far" then.
-  const ongoing = !kpi.data || new Date().toISOString().slice(0, 10) <= kpi.data.period.period_end;
+  const ongoing = !kpi.data || localDate() <= kpi.data.period.period_end;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: insets.top }}>

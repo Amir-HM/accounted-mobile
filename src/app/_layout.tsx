@@ -6,6 +6,8 @@ import { addNetworkStateListener } from 'expo-network';
 import { DarkTheme, DefaultTheme, router, Stack, ThemeProvider } from 'expo-router';
 import { requireOptionalNativeModule } from 'expo';
 import * as Notifications from 'expo-notifications';
+
+import { armScan } from '@/lib/intents';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useRef } from 'react';
 import { AppState, useColorScheme } from 'react-native';
@@ -17,7 +19,7 @@ import { useConnection } from '@/lib/connection';
 import { queryClient } from '@/lib/queries';
 import { captureUnlinked } from '@/lib/capture';
 import { getPref, setPref } from '@/lib/prefs';
-import { usePushEnabled } from '@/lib/push';
+import { refreshPushRegistration, usePushEnabled } from '@/lib/push';
 import { runQueue, useCaptures } from '@/lib/queue';
 import { colors, fonts } from '@/lib/theme';
 
@@ -51,7 +53,10 @@ function useNotificationRouting(enabled: boolean) {
       const url = r.notification.request.content.data?.url;
       if (typeof url !== 'string') return;
       const payment = url.match(/^\/payment\/([\w-]+)$/);
-      if (payment) router.push({ pathname: '/payment/[id]', params: { id: payment[1], scan: '1' } });
+      if (payment) {
+        armScan(payment[1]);
+        router.push({ pathname: '/payment/[id]', params: { id: payment[1] } });
+      }
       else if (url === '/approvals') router.push('/approvals');
     };
     open(Notifications.getLastNotificationResponse());
@@ -61,6 +66,12 @@ function useNotificationRouting(enabled: boolean) {
 }
 
 /** Retry the capture queue whenever it could succeed: launch, foreground, reconnect, every minute. */
+function usePushRefresh(connection: ReturnType<typeof useConnection>) {
+  useEffect(() => {
+    if (connection) void refreshPushRegistration(connection);
+  }, [connection]);
+}
+
 function useQueueWorker(enabled: boolean) {
   useEffect(() => {
     if (!enabled) return;
@@ -118,6 +129,7 @@ export default function RootLayout() {
   const connection = useConnection();
   const [fontsLoaded] = useFonts({ Geist_400Regular, Geist_500Medium, Geist_600SemiBold, HedvigLettersSerif_400Regular });
   useQueueWorker(!!connection);
+  usePushRefresh(connection);
   useNotificationRouting(!!connection && !!fontsLoaded);
   usePrimeNotifications(!!connection && !!fontsLoaded);
   useQuickActions(!!connection && !!fontsLoaded);

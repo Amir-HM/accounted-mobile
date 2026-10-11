@@ -62,6 +62,8 @@ function BankCard({ bank: b, now, onRenew }: { bank: BankConnection; now: number
   const attention = bankNeedsAttention(b, now);
   const expiresIn = b.consent_expires ? Math.round((new Date(b.consent_expires).getTime() - now) / 86400_000) : null;
   const dead = b.status === 'expired';
+  const settingUp = b.status === 'pending' || b.status === 'pending_selection';
+  const bank = b.bank ?? 'The bank';
 
   async function sync() {
     if (!conn) return;
@@ -69,13 +71,13 @@ function BankCard({ bank: b, now, onRenew }: { bank: BankConnection; now: number
     try {
       const r = await syncBankConnection(conn, b.connection_id);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      showToast(r.imported ? `${r.imported} new transaction${r.imported === 1 ? '' : 's'} from ${b.bank}` : `${b.bank} is up to date`);
+      showToast(r.imported ? `${r.imported} new transaction${r.imported === 1 ? '' : 's'} from ${bank}` : `${bank} is up to date`);
       void queryClient.invalidateQueries();
     } catch (e) {
-      if (e instanceof ApiError && e.code === 'BANK_SYNC_COOLDOWN') showToast(`${b.bank} synced a moment ago. Try again in a few minutes.`);
-      else if (e instanceof ApiError && e.code === 'BANK_RATE_LIMITED') showToast(`${b.bank} allows only a few syncs a day. It will sync again tonight.`);
+      if (e instanceof ApiError && e.code === 'BANK_SYNC_COOLDOWN') showToast(`${bank} synced a moment ago. Try again in a few minutes.`);
+      else if (e instanceof ApiError && e.code === 'BANK_RATE_LIMITED') showToast(`${bank} allows only a few syncs a day. It will sync again tonight.`);
       else if (e instanceof ApiError && e.code === 'BANK_SESSION_EXPIRED') {
-        showToast(`${b.bank} needs to be connected again`, 'error', { label: 'Renew', onPress: onRenew });
+        showToast(`${bank} needs to be connected again`, 'error', { label: 'Renew', onPress: onRenew });
         void queryClient.invalidateQueries({ queryKey: ['bank-connections'] });
       } else reportActionError(e, 'Syncing');
     } finally {
@@ -91,8 +93,8 @@ function BankCard({ bank: b, now, onRenew }: { bank: BankConnection; now: number
         ) : (
           <CircleCheck size={18} strokeWidth={1.5} color={hex.success} />
         )}
-        <Text style={[type.bodyMedium, { flex: 1 }]}>{b.bank}</Text>
-        <Text style={type.meta}>{dead ? 'Disconnected' : b.status === 'active' ? 'Connected' : 'Sync failed'}</Text>
+        <Text style={[type.bodyMedium, { flex: 1 }]}>{bank}</Text>
+        <Text style={type.meta}>{dead ? 'Disconnected' : settingUp ? 'Being set up' : b.status === 'active' ? 'Connected' : 'Sync failed'}</Text>
       </View>
       <Text style={type.meta}>
         {[
@@ -102,7 +104,7 @@ function BankCard({ bank: b, now, onRenew }: { bank: BankConnection; now: number
           .filter(Boolean)
           .join(' · ')}
       </Text>
-      {b.status !== 'active' ? (
+      {b.status !== 'active' && !settingUp ? (
         <Attn>
           {dead
             ? 'The bank ended this connection. Renew it with BankID on the web.'
@@ -113,7 +115,7 @@ function BankCard({ bank: b, now, onRenew }: { bank: BankConnection; now: number
         <Attn>{`The consent ends in ${Math.max(expiresIn, 0)} day${expiresIn === 1 ? '' : 's'}. Renew it with BankID on the web to keep transactions coming.`}</Attn>
       ) : null}
       <View style={st.actions}>
-        {!dead ? <Button size="sm" variant="outline" title="Sync now" onPress={sync} busy={busy} /> : null}
+        {!dead && !settingUp ? <Button size="sm" variant="outline" title="Sync now" onPress={sync} busy={busy} /> : null}
         {attention ? <Button size="sm" variant={dead ? 'primary' : 'outline'} title="Renew on the web" onPress={onRenew} /> : null}
       </View>
     </View>

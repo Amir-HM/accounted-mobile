@@ -2,6 +2,7 @@ import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as MediaLibrary from 'expo-media-library/legacy';
+import { useQuery } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Check, FolderOpen, Images, ScanLine, type LucideIcon } from 'lucide-react-native';
 import { useCallback, useEffect, useState } from 'react';
@@ -13,6 +14,9 @@ import { formatMoney } from '@/lib/format';
 import { enqueue, type Capture } from '@/lib/queue';
 import { showToast } from '@/lib/toast';
 import { colors, fonts, radius, space, type, useHex } from '@/lib/theme';
+import { getTransaction } from '@/lib/api';
+import { useConnection } from '@/lib/connection';
+import { merchantName, useMerchantNames } from '@/lib/merchants';
 
 const COLS = 3;
 const GAP = 4;
@@ -25,9 +29,14 @@ const GAP = 4;
  * later (a payment is suggested from the reading).
  */
 export default function AddReceipt() {
-  const p = useLocalSearchParams<{ txId?: string; label?: string; amount?: string; currency?: string; date?: string }>();
-  const tx: Capture['transaction'] | undefined = p.txId
-    ? { id: p.txId, label: p.label ?? '', amount: Number(p.amount), currency: p.currency ?? 'SEK', date: p.date ?? '' }
+  // Only the payment id comes from the link; what is shown and attached is the server's own payment.
+  const p = useLocalSearchParams<{ txId?: string }>();
+  const conn = useConnection();
+  const own = useMerchantNames();
+  const txq = useQuery({ queryKey: ['tx', p.txId], queryFn: () => getTransaction(conn!, p.txId!), enabled: !!conn && !!p.txId });
+  const t = txq.data;
+  const tx: Capture['transaction'] | undefined = t
+    ? { id: t.id, label: merchantName(t.merchant_name ?? t.description, own), amount: t.amount, currency: t.currency, date: t.date }
     : undefined;
   const hex = useHex();
   const { width } = useWindowDimensions();
@@ -64,7 +73,11 @@ export default function AddReceipt() {
     else if (!s.canAskAgain) Linking.openSettings();
   }
 
+  // Opened for a payment: wait for the server's copy, so the receipt is never filed unlinked by accident.
+  const waiting = !!p.txId && !tx;
+
   async function via(method: CaptureMethod) {
+    if (waiting) return;
     try {
       const c = await captureAndQueue(method, tx);
       if (c) {
@@ -82,7 +95,7 @@ export default function AddReceipt() {
   }
 
   async function addPicked() {
-    if (!assets) return;
+    if (!assets || waiting) return;
     setBusy(true);
     try {
       for (const id of picked) {

@@ -8,6 +8,7 @@ import {
   getVatDeclaration,
   getVatPeriodType,
   type Invoice,
+  type InvoiceStatus,
   listBankConnections,
   listCashAccounts,
   listFiscalPeriods,
@@ -23,6 +24,7 @@ import { useConnection, type Connection } from './connection';
 import { listPending, suggestCategories } from './mcp';
 import { usePref } from './prefs';
 import { deviceStore, numberCodec } from './device-store';
+import { localDate } from './format';
 
 const rateLimited = (e: unknown) => e instanceof ApiError && e.status === 429;
 
@@ -95,7 +97,7 @@ export function useCurrentKpi() {
   return useQuery({
     queryKey: ['kpi', c?.serverUrl, c?.companyId],
     queryFn: async () => {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = localDate();
       const periods = await listFiscalPeriods(c!);
       const p =
         periods.find((x) => x.period_start <= today && today <= x.period_end) ??
@@ -186,23 +188,27 @@ export function useBankConnections() {
 
 /** A connection that needs you: broken, expired, or consent ending within two weeks. */
 export function bankNeedsAttention(b: BankConnection, now = Date.now()) {
+  if (b.status === 'pending' || b.status === 'pending_selection') return false; // being set up on the web
   if (b.status !== 'active') return true;
   return !!b.consent_expires && new Date(b.consent_expires).getTime() - now < 14 * 86400_000;
 }
 
-export function useInvoices() {
+const UNPAID: InvoiceStatus[] = ['sent', 'partially_paid', 'overdue'];
+
+/** What customers still owe. Paid invoices are fetched only where they are shown. */
+export function useInvoices(which: 'unpaid' | 'paid' = 'unpaid', enabled = true) {
   const c = useConnection();
   return useQuery({
-    queryKey: ['invoices', c?.serverUrl, c?.companyId],
-    queryFn: () => listInvoices(c!),
-    enabled: !!c,
+    queryKey: ['invoices', which, c?.serverUrl, c?.companyId],
+    queryFn: () => listInvoices(c!, which === 'unpaid' ? UNPAID : ['paid']),
+    enabled: !!c && enabled,
     // Without invoices:read (a sign-in from before this screen) the answer is "not allowed", not an error to retry.
     retry: (n, e) => !(e instanceof ApiError && e.code === 'INSUFFICIENT_SCOPE') && n < 2,
   });
 }
 
 /** Unpaid and past its due date (the server's own "overdue" or a sent invoice whose date has passed). */
-export function isOverdue(i: Invoice, today = new Date().toISOString().slice(0, 10)) {
+export function isOverdue(i: Invoice, today = localDate()) {
   return i.remaining_amount > 0 && (i.status === 'overdue' || ((i.status === 'sent' || i.status === 'partially_paid') && i.due_date < today));
 }
 
@@ -212,10 +218,13 @@ export function useVatNow() {
   return useQuery({
     queryKey: ['vat-now', c?.serverUrl, c?.companyId],
     queryFn: async () => {
-      const s = await getVatPeriodType(c!);
+      const [s, periods] = await Promise.all([getVatPeriodType(c!), listFiscalPeriods(c!)]);
       if (!s.vat_registered || !s.moms_period) return null;
       const now = new Date();
-      const year = now.getFullYear();
+      const today = localDate(now);
+      // Yearly VAT follows the fiscal year, which the server names by the year it ends.
+      const fiscal = periods.find((p) => p.period_start <= today && today <= p.period_end);
+      const year = s.moms_period === 'yearly' && fiscal ? Number(fiscal.period_end.slice(0, 4)) : now.getFullYear();
       const period = s.moms_period === 'monthly' ? now.getMonth() + 1 : s.moms_period === 'quarterly' ? Math.floor(now.getMonth() / 3) + 1 : 1;
       const [declaration, filings] = await Promise.all([getVatDeclaration(c!, s.moms_period, year, period), listVatFilings(c!)]);
       return { declaration, filings };

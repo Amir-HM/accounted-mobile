@@ -31,7 +31,15 @@ export default function Viewer() {
           <Image source={uri} style={{ width, height }} contentFit="contain" />
         </ScrollView>
       ) : (
-        <WebView source={{ uri }} originWhitelist={['*']} allowingReadAccessToURL={uri} style={{ flex: 1, marginTop: insets.top + 52, backgroundColor: 'transparent' }} />
+        <WebView
+          source={{ uri }}
+          // The receipt file only: no scripts, and a link inside a PDF never navigates the viewer.
+          originWhitelist={['file://*']}
+          javaScriptEnabled={false}
+          onShouldStartLoadWithRequest={(r) => r.url === uri}
+          allowingReadAccessToURL={uri}
+          style={{ flex: 1, marginTop: insets.top + 52, backgroundColor: 'transparent' }}
+        />
       )}
       <Pressable
         accessibilityRole="button"

@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Image as ImageIcon, Pencil, ScanLine } from 'lucide-react-native';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { Reveal } from '@/components/motion';
@@ -16,11 +16,12 @@ import { useConnection } from '@/lib/connection';
 import { formatMoney } from '@/lib/format';
 import { queryClient, useCashAccounts } from '@/lib/queries';
 import { colors, space, type } from '@/lib/theme';
+import { hasScan, takeScan } from '@/lib/intents';
 import { merchantName, promptMerchantName, useMerchantNames } from '@/lib/merchants';
 
 export default function PaymentScreen() {
   const own = useMerchantNames();
-  const { id, scan } = useLocalSearchParams<{ id: string; scan?: string }>();
+  const { id } = useLocalSearchParams<{ id: string }>();
   const conn = useConnection();
   const accounts = useCashAccounts();
   const [busy, setBusy] = useState<CaptureMethod | null>(null);
@@ -57,14 +58,15 @@ export default function PaymentScreen() {
     }
   }
 
-  // Opened from "Snap the receipt": go straight to the scanner, once.
-  const autoScanned = useRef(false);
+  // Opened from "Snap the receipt": go straight to the scanner, once the payment has loaded.
+  const ready = !!t;
   useEffect(() => {
-    if (scan !== '1' || !t || autoScanned.current) return;
-    autoScanned.current = true;
-    const timer = setTimeout(() => void capture('scan'), 350); // after the push animation
+    if (!ready || !hasScan(id)) return;
+    // Taken inside the timer, so an effect re-run before it fires cannot lose it.
+    const timer = setTimeout(() => takeScan(id) && void capture('scan'), 350); // after the push animation
     return () => clearTimeout(timer);
-  });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- capture reads the loaded payment
+  }, [ready, id]);
 
   function noReceipt() {
     if (!t) return;
@@ -125,7 +127,7 @@ export default function PaymentScreen() {
               onPress={() =>
                 router.push({
                   pathname: '/add',
-                  params: { txId: t.id, label: name, amount: String(t.amount), currency: t.currency, date: t.date },
+                  params: { txId: t.id },
                 })
               }
             />

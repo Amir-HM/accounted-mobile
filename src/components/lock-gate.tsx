@@ -1,4 +1,5 @@
 import * as LocalAuthentication from 'expo-local-authentication';
+import { router, usePathname } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { AppState, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeOut } from 'react-native-reanimated';
@@ -8,6 +9,9 @@ import { getPref, usePref } from '@/lib/prefs';
 import { colors, fonts, motion, space, type } from '@/lib/theme';
 
 const RELOCK_AFTER_MS = 60_000;
+// Screens iOS presents natively above everything, including this cover: a
+// receipt, the recent-photos grid. They are closed when the app is left.
+const MODAL = /^\/(viewer\/|add|assign\/|prime)/;
 
 /**
  * Two privacy layers over the whole app:
@@ -23,6 +27,11 @@ export function LockGate({ enabled }: { enabled: boolean }) {
   const [locked, setLocked] = useState(() => enabled && getPref('faceIdLock'));
   const leftAt = useRef<number | null>(null);
   const prompting = useRef(false);
+  const pathname = usePathname();
+  const path = useRef(pathname);
+  useEffect(() => {
+    path.current = pathname;
+  }, [pathname]);
 
   async function unlock() {
     if (prompting.current) return;
@@ -48,6 +57,9 @@ export function LockGate({ enabled }: { enabled: boolean }) {
       } else {
         setAway(true);
         if (s === 'background' && leftAt.current == null) leftAt.current = Date.now();
+        if (s === 'background' && (getPref('privacyCover') || getPref('faceIdLock')) && MODAL.test(path.current) && router.canGoBack()) {
+          router.back();
+        }
       }
     });
     return () => sub.remove();

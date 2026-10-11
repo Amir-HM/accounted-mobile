@@ -104,3 +104,8 @@ export function maskIban(iban: string | null | undefined): string | null {
   const s = (iban ?? '').replace(/\s/g, '');
   return s.length > 8 ? `${s.slice(0, 4)} •••• ${s.slice(-4)}` : null;
 }
+
+/** Today as YYYY-MM-DD in the phone's own time zone (toISOString would give the UTC date, a day off around midnight). */
+export function localDate(d = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}

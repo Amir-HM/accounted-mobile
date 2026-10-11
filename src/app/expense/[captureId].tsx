@@ -8,11 +8,11 @@ import { Attn, Button, SectionLabel, TopBar } from '@/components/ui';
 import { CaptureThumb } from '@/components/capture-row';
 import { useConnection } from '@/lib/connection';
 import { deviceStore } from '@/lib/device-store';
-import { formatMoney } from '@/lib/format';
+import { formatMoney, localDate } from '@/lib/format';
 import { stageExpenseClaim } from '@/lib/mcp';
 import { usePref } from '@/lib/prefs';
 import { queryClient, useCostAccounts } from '@/lib/queries';
-import { useCaptures } from '@/lib/queue';
+import { markClaimed, useCaptures } from '@/lib/queue';
 import { reportActionError } from '@/lib/scope';
 import { showToast } from '@/lib/toast';
 import { colors, fonts, radius, space, type, useHex } from '@/lib/theme';
@@ -40,7 +40,7 @@ export default function ExpenseClaim() {
   const currency = x?.invoice?.currency || 'SEK';
 
   const [description, setDescription] = useState(x?.supplier?.name ?? '');
-  const [date, setDate] = useState(x?.invoice?.invoiceDate ?? new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(x?.invoice?.invoiceDate ?? localDate());
   const [amount, setAmount] = useState(x?.totals?.total != null ? String(x.totals.total) : '');
   // Foreign VAT is not deductible here, so a foreign receipt starts at 0.
   const [vat, setVat] = useState(currency === 'SEK' && x?.totals?.vatAmount != null ? String(x.totals.vatAmount) : '0');
@@ -55,7 +55,7 @@ export default function ExpenseClaim() {
   const q = search.trim().toLowerCase();
   const matches = q ? (accounts.data ?? []).filter((a) => a.number.startsWith(q) || a.name.toLowerCase().includes(q)).slice(0, 8) : [];
   const total = num(amount);
-  const vatN = num(vat || '0');
+  const vatN = currency === 'SEK' ? num(vat || '0') : 0;
   const problem = !description.trim()
     ? 'Describe the purchase.'
     : !/^\d{4}-\d{2}-\d{2}$/.test(date)
@@ -85,6 +85,7 @@ export default function ExpenseClaim() {
         ...(c!.documentId ? { document_id: c!.documentId } : {}),
         ...(c!.inboxItemId ? { inbox_item_id: c!.inboxItemId } : {}),
       });
+      markClaimed(c!.id);
       lastClaimant.set(claimant.trim());
       lastAccount.set(chosen.number);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -109,6 +110,11 @@ export default function ExpenseClaim() {
           </Text>
         </Reveal>
 
+        {c.claimedAt ? (
+          <View style={{ paddingTop: space(4) }}>
+            <Attn>This receipt was already sent as an expense claim. Find it in Approvals, or in Accounted on the web.</Attn>
+          </View>
+        ) : null}
         {!enabled ? (
           <View style={{ paddingTop: space(4) }}>
             <Attn>Booking from the phone is off. Turn it on in Settings → Booking when Accounted is where you book.</Attn>
@@ -127,9 +133,13 @@ export default function ExpenseClaim() {
             <TextInput style={st.input} value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={hex.mutedForeground} />
           </Field>
         </View>
-        <Field label={currency === 'SEK' ? 'VAT in the amount' : 'VAT (foreign VAT is not deductible: 0)'}>
-          <TextInput style={st.input} value={vat} onChangeText={setVat} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={hex.mutedForeground} />
-        </Field>
+        {currency === 'SEK' ? (
+          <Field label="VAT in the amount">
+            <TextInput style={st.input} value={vat} onChangeText={setVat} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={hex.mutedForeground} />
+          </Field>
+        ) : (
+          <Text style={[type.meta, { paddingBottom: space(3) }]}>Foreign VAT cannot be deducted in Sweden, so no VAT is claimed.</Text>
+        )}
 
         <SectionLabel>Cost account</SectionLabel>
         {chosen ? (
@@ -168,7 +178,7 @@ export default function ExpenseClaim() {
             title={total > 0 ? `Send ${formatMoney(total, currency)} for approval` : 'Send for approval'}
             onPress={submit}
             busy={busy}
-            disabled={!enabled || !!problem}
+            disabled={!enabled || !!problem || !!c.claimedAt}
           />
         </View>
       </ScrollView>

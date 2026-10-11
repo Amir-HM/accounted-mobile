@@ -44,3 +44,16 @@ export async function disablePush(conn: Connection | null): Promise<void> {
   token.set(null);
   if (t && conn) await relay('/unregister', conn, t).catch(() => {});
 }
+
+/**
+ * Re-register this phone with the relay on launch. The relay forgets phones
+ * that have not checked in for 30 days, so a lost or revoked phone stops
+ * getting pushes on its own. No permission prompt: only when already enabled.
+ */
+export async function refreshPushRegistration(conn: Connection): Promise<void> {
+  const t = token.get();
+  if (!t || !PUSH_RELAY) return;
+  const perms = await Notifications.getPermissionsAsync();
+  if (!perms.granted) return;
+  await relay('/register', conn, t).catch(() => {});
+}

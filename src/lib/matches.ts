@@ -24,7 +24,7 @@ export function useReceiptMatches(): ReceiptMatch[] {
   const out: ReceiptMatch[] = [];
   const used = new Set<string>();
   for (const c of captures) {
-    if (c.transaction || c.state !== 'done' || !c.extraction) continue;
+    if (c.transaction || c.claimedAt || c.state !== 'done' || !c.extraction) continue;
     const tx = suggestPayment(c.extraction, open.filter((t) => !used.has(t.id)));
     if (tx) {
       used.add(tx.id);
