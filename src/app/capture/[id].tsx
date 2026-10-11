@@ -9,13 +9,15 @@ import { Reveal } from '@/components/motion';
 import { Attn, Button, Row, SectionLabel, TopBar } from '@/components/ui';
 import { suggestPayment, verify } from '@/lib/checks';
 import { useConnection } from '@/lib/connection';
-import { formatMoney, tidyMerchant } from '@/lib/format';
+import { formatMoney } from '@/lib/format';
+import { merchantName, useMerchantNames } from '@/lib/merchants';
 import { useHiddenIds, useMissingReceipts } from '@/lib/queries';
 import { assignTransaction, captureFile, discard, retry, useCaptures } from '@/lib/queue';
 import { colors, radius, space, type, useHex } from '@/lib/theme';
 
 /** One captured receipt: what the server read, the checks, and where it belongs. */
 export default function CaptureScreen() {
+  const own = useMerchantNames();
   const { id } = useLocalSearchParams<{ id: string }>();
   const hex = useHex();
   const conn = useConnection();
@@ -34,7 +36,7 @@ export default function CaptureScreen() {
   const fmt = (n: number | null | undefined) => (n == null ? '–' : formatMoney(n, currency));
 
   function attach(t: { id: string; amount: number; currency: string; date: string; merchant_name: string | null; description: string | null }) {
-    const label = tidyMerchant(t.merchant_name ?? t.description);
+    const label = merchantName(t.merchant_name ?? t.description);
     assignTransaction(c!.id, { id: t.id, label, amount: t.amount, currency: t.currency, date: t.date });
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     router.back();
@@ -146,7 +148,7 @@ export default function CaptureScreen() {
               {suggestion ? (
                 <View style={st.suggest}>
                   <Text style={type.label}>Suggested</Text>
-                  <Text style={type.bodyMedium}>{tidyMerchant(suggestion.merchant_name ?? suggestion.description)}</Text>
+                  <Text style={type.bodyMedium}>{merchantName(suggestion.merchant_name ?? suggestion.description, own)}</Text>
                   <Text style={type.meta}>{`${suggestion.date.slice(0, 10)} · ${formatMoney(suggestion.amount, suggestion.currency)} · same amount and date`}</Text>
                   <Button title="Attach to this payment" onPress={() => attach(suggestion)} disabled={c.state !== 'done'} style={{ marginTop: space(2) }} />
                 </View>

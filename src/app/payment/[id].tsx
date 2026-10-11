@@ -13,10 +13,10 @@ import { nameAccount, useLedgerNames, useNicknames } from '@/lib/accounts';
 import { getTransaction, type Transaction } from '@/lib/api';
 import { captureAndQueue, type CaptureMethod } from '@/lib/capture';
 import { useConnection } from '@/lib/connection';
-import { formatMoney, merchantName } from '@/lib/format';
+import { formatMoney } from '@/lib/format';
 import { queryClient, useCashAccounts } from '@/lib/queries';
 import { colors, space, type } from '@/lib/theme';
-import { promptMerchantName, useMerchantNames } from '@/lib/merchants';
+import { merchantName, promptMerchantName, useMerchantNames } from '@/lib/merchants';
 
 export default function PaymentScreen() {
   const own = useMerchantNames();

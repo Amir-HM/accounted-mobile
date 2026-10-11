@@ -7,14 +7,14 @@ import ReanimatedSwipeable, { type SwipeableMethods } from 'react-native-gesture
 
 import type { Transaction } from '@/lib/api';
 import { captureAndQueue, type CaptureMethod } from '@/lib/capture';
-import { formatMoney, merchantName, tidyMerchant } from '@/lib/format';
+import { formatMoney } from '@/lib/format';
 import { markNoDocumentRequired, unmarkNoDocumentRequired } from '@/lib/api';
 import { loadConnection } from '@/lib/connection';
 import { queryClient, setNoReceiptNeeded } from '@/lib/queries';
 import { reportActionError } from '@/lib/scope';
 import { showToast } from '@/lib/toast';
 import { colors, fonts, space, type, useHex } from '@/lib/theme';
-import { promptMerchantName, useMerchantNames } from '@/lib/merchants';
+import { merchantName, promptMerchantName, useMerchantNames } from '@/lib/merchants';
 
 const ACTION_W = 84;
 
@@ -32,7 +32,7 @@ const REASONS = [
  * too. An unbooked payment can only be hidden on this iPhone until booked.
  */
 export function hideWithUndo(tx: Pick<Transaction, 'id' | 'merchant_name' | 'description' | 'journal_entry_id'>) {
-  const name = tidyMerchant(tx.merchant_name ?? tx.description);
+  const name = merchantName(tx.merchant_name ?? tx.description);
   const conn = loadConnection();
   if (!tx.journal_entry_id || !conn) {
     setNoReceiptNeeded(tx.id, true);
@@ -70,7 +70,7 @@ export async function captureFor(tx: Transaction, method: CaptureMethod) {
   try {
     const c = await captureAndQueue(method, {
       id: tx.id,
-      label: tidyMerchant(tx.merchant_name ?? tx.description),
+      label: merchantName(tx.merchant_name ?? tx.description),
       amount: tx.amount,
       currency: tx.currency,
       date: tx.date,

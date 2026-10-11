@@ -1,6 +1,7 @@
 import * as Notifications from 'expo-notifications';
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
 import { useEffect } from 'react';
+import { useColorScheme } from 'react-native';
 
 import { useHiddenIds, useMissingReceipts } from '@/lib/queries';
 import { usePushEnabled } from '@/lib/push';
@@ -21,6 +22,8 @@ export default function TabsLayout() {
   const inFlight = new Set(captures.filter((c) => c.transaction && c.state !== 'failed').map((c) => c.transaction!.id));
   const count = (missing.data ?? []).filter((t) => !hidden.includes(t.id) && !inFlight.has(t.id)).length;
   const push = usePushEnabled();
+  // iOS draws badge text in white: ink works in light mode; dark mode keeps the system red.
+  const dark = useColorScheme() === 'dark';
 
   // The app icon carries the same count once notifications are allowed.
   useEffect(() => {
@@ -32,7 +35,7 @@ export default function TabsLayout() {
       minimizeBehavior="onScrollDown"
       tintColor={hex.foreground}
       iconColor={{ default: hex.mutedForeground, selected: hex.foreground }}
-      badgeBackgroundColor={hex.foreground}
+      badgeBackgroundColor={dark ? undefined : hex.foreground}
       labelStyle={{
         default: { fontFamily: fonts.body, fontSize: 11, color: hex.mutedForeground },
         selected: { fontFamily: fonts.medium, fontSize: 11, color: hex.foreground },

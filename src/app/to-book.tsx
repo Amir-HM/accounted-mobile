@@ -5,10 +5,10 @@ import { Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native'
 
 import { Skeleton } from '@/components/motion';
 import { Attn, EmptyState, TopBar } from '@/components/ui';
-import { formatMoney, merchantName } from '@/lib/format';
+import { formatMoney } from '@/lib/format';
 import { useToBook } from '@/lib/queries';
 import { colors, fonts, space, type } from '@/lib/theme';
-import { useMerchantNames } from '@/lib/merchants';
+import { merchantName, useMerchantNames } from '@/lib/merchants';
 
 /** Bank transactions not booked yet; tap one to book it. */
 export default function ToBook() {

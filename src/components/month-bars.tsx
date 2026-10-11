@@ -1,5 +1,5 @@
 import * as Haptics from 'expo-haptics';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
@@ -29,7 +29,18 @@ function monthAt(start: string, i: number) {
  * at first and the readout shows the year so far; touch or drag across the
  * chart to read a month, tap it again to go back to the year.
  */
-export function MonthBars({ months, start, yearLabel }: { months: Month[]; start: string; yearLabel: string }) {
+export function MonthBars({
+  months,
+  start,
+  yearLabel,
+  ongoing = true,
+}: {
+  months: Month[];
+  start: string;
+  yearLabel: string;
+  /** False for a fiscal year that has ended: the readout then says "2026", not "2026 so far". */
+  ongoing?: boolean;
+}) {
   const maxUp = Math.max(0, ...months.map((m) => m.net));
   const maxDown = Math.max(0, ...months.map((m) => -m.net));
   const total = maxUp + maxDown || 1;
@@ -39,36 +50,60 @@ export function MonthBars({ months, start, yearLabel }: { months: Month[]; start
   const down = HEIGHT - up;
   const scale = Math.max(maxUp / Math.max(up, 1), maxDown / Math.max(down, 1)) || 1;
 
-  const [sel, setSel] = useState<number | null>(null);
+  const [picked, setPicked] = useState<number | null>(null);
+  const count = months.length;
+  // A refetch can bring fewer months (another company, a new fiscal year): drop a stale pick.
+  const sel = picked != null && picked < count ? picked : null;
   const year = months.reduce(
     (a, x) => ({ label: '', net: a.net + x.net, income: a.income + x.income, expenses: a.expenses + x.expenses }),
     { label: '', net: 0, income: 0, expenses: 0 } as Month,
   );
   const m = sel == null ? year : months[sel];
-  const title = sel == null ? `${yearLabel} so far` : monthLong.format(monthAt(start, sel));
+  const title = sel == null ? (ongoing ? `${yearLabel} so far` : yearLabel) : monthLong.format(monthAt(start, sel));
 
+  // The gesture runs on the UI thread and keeps the current pick in a shared
+  // value, so it never acts on a stale render; React only hears about changes.
   const width = useSharedValue(1);
-  const count = months.length;
-  const pick = (i: number) => {
-    if (i === sel) return;
+  const cur = useSharedValue(-1);
+  const len = useSharedValue(count);
+  useEffect(() => {
+    len.set(count);
+    cur.set(sel ?? -1); // keep the gesture's idea of the pick in step with what is shown
+  }, [count, sel, cur, len]);
+
+  const apply = (i: number) => {
     Haptics.selectionAsync();
-    setSel(i);
+    setPicked(i < 0 ? null : i);
   };
-  const toggle = (i: number) => {
-    Haptics.selectionAsync();
-    setSel(i === sel ? null : i);
+  const gesture = useMemo(() => {
+    const at = (x: number) => {
+      'worklet';
+      const n = len.get();
+      return Math.max(0, Math.min(n - 1, Math.floor((x / Math.max(width.get(), 1)) * n)));
+    };
+    return Gesture.Race(
+      Gesture.Pan()
+        .activeOffsetX([-8, 8])
+        .failOffsetY([-12, 12])
+        .onUpdate((e) => {
+          const i = at(e.x);
+          if (i !== cur.get()) {
+            cur.set(i);
+            scheduleOnRN(apply, i);
+          }
+        }),
+      Gesture.Tap().onEnd((e) => {
+        const i = at(e.x);
+        const next = i === cur.get() ? -1 : i; // tap the picked month again for the whole year
+        cur.set(next);
+        scheduleOnRN(apply, next);
+      }),
+    );
+  }, [cur, len, width]);
+  const step = (i: number) => {
+    cur.set(i);
+    apply(i);
   };
-  const at = (x: number) => {
-    'worklet';
-    return Math.max(0, Math.min(count - 1, Math.floor((x / Math.max(width.get(), 1)) * count)));
-  };
-  const gesture = Gesture.Race(
-    Gesture.Pan()
-      .activeOffsetX([-8, 8])
-      .failOffsetY([-12, 12])
-      .onUpdate((e) => scheduleOnRN(pick, at(e.x))),
-    Gesture.Tap().onEnd((e) => scheduleOnRN(toggle, at(e.x))),
-  );
 
   return (
     <View style={{ gap: space(3) }}>
@@ -98,8 +133,8 @@ export function MonthBars({ months, start, yearLabel }: { months: Month[]; start
           accessibilityLabel={`Result per month, ${yearLabel}`}
           accessibilityValue={{ text: `${title}: ${formatMoney(m.net)}` }}
           onAccessibilityAction={(e) => {
-            if (e.nativeEvent.actionName === 'increment') pick(sel == null ? 0 : Math.min(count - 1, sel + 1));
-            if (e.nativeEvent.actionName === 'decrement') pick(sel == null ? count - 1 : Math.max(0, sel - 1));
+            if (e.nativeEvent.actionName === 'increment') step(sel == null ? 0 : Math.min(count - 1, sel + 1));
+            if (e.nativeEvent.actionName === 'decrement') step(sel == null ? count - 1 : Math.max(0, sel - 1));
           }}
           accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
           onLayout={(e) => width.set(e.nativeEvent.layout.width)}

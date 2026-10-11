@@ -6,7 +6,8 @@ import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { CaptureThumb } from '@/components/capture-row';
 import { EmptyState } from '@/components/ui';
-import { formatMoney, tidyMerchant } from '@/lib/format';
+import { formatMoney } from '@/lib/format';
+import { merchantName } from '@/lib/merchants';
 import { useHiddenIds, useMissingReceipts } from '@/lib/queries';
 import { suggestPayment } from '@/lib/checks';
 import { assignTransaction, useCaptures } from '@/lib/queue';
@@ -49,7 +50,7 @@ export default function Assign() {
         />
       }
       renderItem={({ item: t, index }) => {
-        const label = tidyMerchant(t.merchant_name ?? t.description);
+        const label = merchantName(t.merchant_name ?? t.description);
         return (
           <Pressable
             style={({ pressed }) => [st.row, index < options.length - 1 && st.divider, pressed && { backgroundColor: colors.muted }]}

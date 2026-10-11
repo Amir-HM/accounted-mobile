@@ -1,5 +1,3 @@
-import { merchantKey, ownMerchantName } from './merchants';
-
 const money = new Map<string, Intl.NumberFormat>();
 
 /** 1 234,56 kr / 20,04 US$: Swedish grouping, the currency's own symbol. */
@@ -61,7 +59,7 @@ const KNOWN: [RegExp, string | ((m: RegExpMatchArray) => string)][] = [
   [/^metapay\*/i, 'Meta'],
   [/^company .*plan fee$/i, 'Revolut plan fee'],
   [/^exchanged to ([a-z]{3})\b/i, (m) => `Currency exchange to ${m[1].toUpperCase()}`],
-  [/^to [a-z]{3} (.+?)(?: [a-z]{3})?$/i, (m) => `Transfer to ${titleCase(m[1])}`],
+  [/^to (sek|eur|usd|gbp|nok|dkk|chf) (.+?)(?: \1)?$/i, (m) => `Transfer to ${titleCase(m[2])}`],
   [/^revolut top-up$/i, 'Revolut top-up'],
   [/^insättning bankgiro/i, 'Bankgiro deposit'],
   [/^avgift$/i, 'Bank fee'],
@@ -80,8 +78,6 @@ function titleCase(s: string) {
 }
 
 export function tidyMerchant(raw: string | null | undefined): string {
-  const own = ownMerchantName(raw);
-  if (own) return own;
   let s = (raw ?? '').replace(/\s+/g, ' ').trim();
   if (!s) return 'Unknown';
   for (const [re, name] of KNOWN) {
@@ -107,13 +103,4 @@ export function tidyMerchant(raw: string | null | undefined): string {
 export function maskIban(iban: string | null | undefined): string | null {
   const s = (iban ?? '').replace(/\s/g, '');
   return s.length > 8 ? `${s.slice(0, 4)} •••• ${s.slice(-4)}` : null;
-}
-
-/**
- * The display name for a bank text, given the current renames. Taking the
- * renames as an argument (from useMerchantNames) keeps memoised screens in
- * step when a name changes.
- */
-export function merchantName(raw: string | null | undefined, own: Record<string, string>): string {
-  return own[merchantKey(raw)] ?? tidyMerchant(raw);
 }

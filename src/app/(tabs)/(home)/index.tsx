@@ -78,6 +78,9 @@ export default function Overview() {
   const error = accounts.error ?? kpi.error ?? missing.error;
   const k = kpi.data?.kpi;
   const fy = kpi.data ? fiscalYearLabel(kpi.data.period.period_start, kpi.data.period.period_end) : '';
+  // Before next year's period exists, the latest one shown has ended: no "so far" then.
+  const ongoing = !kpi.data || new Date().toISOString().slice(0, 10) <= kpi.data.period.period_end;
+  const fySoFar = ongoing ? `${fy} so far` : fy;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: insets.top }}>
@@ -171,15 +174,15 @@ export default function Overview() {
                 label="Result"
                 value={formatMoneyShort(k.netResult)}
                 tone={k.netResult < 0 ? 'negative' : undefined}
-                caption={`${fy} so far`}
+                caption={fySoFar}
               />
               <Tile label="VAT" value={formatMoneyShort(k.vatLiability)} caption="to pay" />
-              <Tile label="Revenue" value={formatMoneyShort(k.totalRevenue)} caption={`${fy} so far`} />
-              <Tile label="Expenses" value={formatMoneyShort(k.totalExpenses)} caption={`${fy} so far`} />
+              <Tile label="Revenue" value={formatMoneyShort(k.totalRevenue)} caption={fySoFar} />
+              <Tile label="Expenses" value={formatMoneyShort(k.totalExpenses)} caption={fySoFar} />
             </Reveal>
 
             <Reveal index={4} style={{ paddingTop: space(8) }}>
-              <MonthBars months={monthsSoFar(k)} start={kpi.data!.period.period_start} yearLabel={fy} />
+              <MonthBars months={monthsSoFar(k)} start={kpi.data!.period.period_start} yearLabel={fy} ongoing={ongoing} />
             </Reveal>
           </>
         ) : kpi.isPending ? (
