@@ -32,14 +32,71 @@ export function formatRelative(iso: string): string {
   return formatDay(iso);
 }
 
-/** Bank descriptions arrive as "OPENAI *CHATGPT SUBSCR": tidy the shouting. */
+/**
+ * Bank texts in plain English: "OPENAI *CHATGPT SUBSCR" reads "ChatGPT",
+ * "Exchanged to EUR Main" reads "Currency exchange to EUR". Known merchants
+ * and the banks' own phrases (Swedish and Revolut) come first; anything else
+ * is tidied: card-processor prefixes and reference codes dropped, legal
+ * suffixes removed, shouting turned into title case. The original text stays
+ * on the payment's detail page.
+ */
+const KNOWN: [RegExp, string | ((m: RegExpMatchArray) => string)][] = [
+  [/openai.*chatgpt/i, 'ChatGPT'],
+  [/^openai\b/i, 'OpenAI'],
+  [/anthropic.*claude/i, 'Claude'],
+  [/^anthropic\b/i, 'Anthropic'],
+  [/openrouter/i, 'OpenRouter'],
+  [/vercel mkt supabase/i, 'Supabase (via Vercel)'],
+  [/^vercel\b/i, 'Vercel'],
+  [/google\s*\*?\s*workspace/i, 'Google Workspace'],
+  [/heroku/i, 'Heroku'],
+  [/^cursor\b/i, 'Cursor'],
+  [/github/i, 'GitHub'],
+  [/^if skadef/i, 'If insurance'],
+  [/downtown camper/i, 'Downtown Camper by Scandic'],
+  [/^sj\.se$/i, 'SJ'],
+  [/^brod och salt/i, 'Bröd & Salt'],
+  [/^metapay\*/i, 'Meta'],
+  [/^company .*plan fee$/i, 'Revolut plan fee'],
+  [/^exchanged to ([a-z]{3})\b/i, (m) => `Currency exchange to ${m[1].toUpperCase()}`],
+  [/^to [a-z]{3} (.+?)(?: [a-z]{3})?$/i, (m) => `Transfer to ${titleCase(m[1])}`],
+  [/^revolut top-up$/i, 'Revolut top-up'],
+  [/^insättning bankgiro/i, 'Bankgiro deposit'],
+  [/^avgift$/i, 'Bank fee'],
+  [/^övertrass/i, 'Overdraft fee'],
+  [/^okänd transaktion$/i, 'Unknown payment'],
+  [/^utlägg\s+(.+)$/i, (m) => `Expense paid by ${titleCase(m[1])}`],
+  [/^utlägg$/i, 'Expense paid personally'],
+  [/^(momsreserv|avsatt för moms)/i, 'Set aside for VAT'],
+  [/stichting mollie/i, 'Mollie (account check)'],
+  [/^webhallen faktura .*? - (.+)$/i, (m) => `Webhallen: ${m[1]}`],
+  [/^webhallen/i, 'Webhallen'],
+];
+
+function titleCase(s: string) {
+  return s.toLowerCase().replace(/(^|[\s(./&-])([a-zåäö])/g, (_, p, c) => p + c.toUpperCase());
+}
+
 export function tidyMerchant(raw: string | null | undefined): string {
-  const s = (raw ?? '').trim();
+  let s = (raw ?? '').replace(/\s+/g, ' ').trim();
   if (!s) return 'Unknown';
-  if (s === s.toUpperCase() && /[A-ZÅÄÖ]{3}/.test(s)) {
-    return s.toLowerCase().replace(/(^|[\s*./-])([a-zåäö])/g, (_, p, c) => p + c.toUpperCase());
+  for (const [re, name] of KNOWN) {
+    const m = s.match(re);
+    if (m) return typeof name === 'string' ? name : name(m);
   }
-  return s;
+  s = s
+    .replace(/^(sq|sp|pp|paypal|tst|sumup|zettle|izettle|klarna|stripe)\s*\*\s*/i, '') // card-processor prefixes
+    .replace(/\*\s*[A-Z0-9]{5,}$/, '') // trailing reference codes
+    .replace(/\*/g, ' ')
+    .replace(/^www\./i, '')
+    .replace(/\.(com|se|io|net|org|ai|co)$/i, '')
+    .replace(/,?\s+(inc|inc\.|ab|ltd|llc|gmbh|bv|oy|as)\.?$/i, '')
+    .replace(/[\s-]+$/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (s === s.toUpperCase() && /[A-ZÅÄÖ]{3}/.test(s)) s = titleCase(s);
+  else if (s === s.toLowerCase()) s = s.charAt(0).toUpperCase() + s.slice(1);
+  return s || 'Unknown';
 }
 
 /** SE64 •••• 6065: enough to tell accounts apart without showing the number. */

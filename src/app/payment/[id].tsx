@@ -3,7 +3,7 @@ import * as Haptics from 'expo-haptics';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Image as ImageIcon, ScanLine } from 'lucide-react-native';
 import { useState } from 'react';
-import { Alert, ScrollView, Text, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { Reveal } from '@/components/motion';
 import { usePref } from '@/lib/prefs';
@@ -36,7 +36,8 @@ export default function PaymentScreen() {
   const nicks = useNicknames();
   const raw = accounts.data?.find((a) => a.cash_account_id === t?.cash_account_id);
   const account = raw ? nameAccount(raw, ledger.data, nicks) : undefined;
-  const name = tidyMerchant(t?.merchant_name ?? t?.description);
+  const original = (t?.merchant_name ?? t?.description ?? '').trim();
+  const name = tidyMerchant(original);
 
   async function capture(method: CaptureMethod) {
     if (!t) return;
@@ -84,6 +85,14 @@ export default function PaymentScreen() {
 
           <Reveal index={1}>
             <Divider />
+            {original && original !== name ? (
+              <View style={st.original}>
+                <Text style={type.body}>On the bank statement</Text>
+                <Text selectable style={[type.body, { flexShrink: 1, textAlign: 'right', color: colors.mutedForeground }]}>
+                  {original}
+                </Text>
+              </View>
+            ) : null}
             <Row title="Date" value={t.date.slice(0, 10)} valueTone="muted" />
             <Row title="Account" value={account ? account.title : '–'}
             onPress={account ? () => router.push({ pathname: '/account/[id]', params: { id: account.cash_account_id } }) : undefined} valueTone="muted" />
@@ -127,3 +136,16 @@ export default function PaymentScreen() {
     </View>
   );
 }
+
+const st = StyleSheet.create({
+  original: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: space(4),
+    minHeight: 52,
+    paddingVertical: space(3),
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+});

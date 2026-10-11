@@ -53,9 +53,9 @@ export const radius = { pill: 999, panel: 12, surface: 8, leaf: 4 } as const;
 // Spacing scale 4/8/12/16/24/32/40/48 only.
 export const space = (n: 1 | 2 | 3 | 4 | 6 | 8 | 10 | 12) => n * 4;
 
-// Text scale: 11 labels, 12.5 meta/attn, 13 body, 15 lead, plus display sizes.
+// Text scale: 13 labels (sentence case), 12.5 meta/attn, 13 body, 15 lead, plus display sizes.
 export const type = {
-  label: { fontFamily: fonts.medium, fontSize: 11, letterSpacing: 1.1, textTransform: 'uppercase' as const, color: colors.mutedForeground },
+  label: { fontFamily: fonts.medium, fontSize: 13, color: colors.mutedForeground },
   meta: { fontFamily: fonts.body, fontSize: 12.5, color: colors.mutedForeground },
   body: { fontFamily: fonts.body, fontSize: 15, color: colors.foreground },
   bodyMedium: { fontFamily: fonts.medium, fontSize: 15, color: colors.foreground },
