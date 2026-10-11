@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { ArrowLeftRight, Bot, ChevronRight, FileText, FileWarning, Landmark, Percent, ScanLine, Upload } from 'lucide-react-native';
+import { ArrowLeftRight, Bot, CircleCheck, FileText, FileWarning, Landmark, Percent, ScanLine, Upload, type LucideIcon } from 'lucide-react-native';
 import { useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -13,7 +13,7 @@ import { ApiError, type Kpi } from '@/lib/api';
 import { useConnection } from '@/lib/connection';
 import { formatMoney, formatMoneyShort, maskIban } from '@/lib/format';
 import { usePref } from '@/lib/prefs';
-import { bankNeedsAttention, isOverdue, lookbackLabel, useBankConnections, useCashAccounts, useInvoices, useCurrentKpi, useHiddenIds, useLookbackDays, useMissingReceipts, usePendingOps, useToBook } from '@/lib/queries';
+import { bankNeedsAttention, isOverdue, useBankConnections, useCashAccounts, useInvoices, useCurrentKpi, useHiddenIds, useMissingReceipts, usePendingOps, useToBook } from '@/lib/queries';
 import { pendingCount, useCaptures } from '@/lib/queue';
 import { colors, fonts, radius, space, type, useHex } from '@/lib/theme';
 
@@ -48,7 +48,6 @@ function runway(k: Kpi) {
 
 export default function Overview() {
   const conn = useConnection();
-  const hex = useHex();
   const insets = useSafeAreaInsets();
   const [now] = useState(() => Date.now()); // read once per visit, not on every render
   const accounts = useCashAccounts();
@@ -56,7 +55,6 @@ export default function Overview() {
   const missing = useMissingReceipts();
   const hidden = useHiddenIds();
   const captures = useCaptures();
-  const days = useLookbackDays();
   const bookOn = usePref('bookInAccounted');
   const toBook = useToBook();
   const pending = usePendingOps();
@@ -80,6 +78,15 @@ export default function Overview() {
   const todayIso = new Date(now).toISOString().slice(0, 10);
   const unpaidInvoices = (invoices.data?.invoices ?? []).filter((i) => i.remaining_amount > 0 && !['draft', 'cancelled', 'credited'].includes(i.status));
   const overdueInvoices = unpaidInvoices.filter((i) => isOverdue(i, todayIso));
+
+  const todos: Todo[] = [];
+  if (missingCount) todos.push({ key: 'missing', label: `${missingCount} receipt${missingCount === 1 ? '' : 's'}`, icon: FileWarning, tone: 'attn', onPress: () => router.navigate('/receipts') });
+  if (approvals) todos.push({ key: 'approvals', label: `${approvals} to approve`, icon: Bot, tone: 'attn', onPress: () => router.push('/approvals') });
+  if (brokenBanks.length) todos.push({ key: 'banks', label: brokenBanks.length === 1 ? brokenBanks[0].bank : `${brokenBanks.length} banks`, icon: Landmark, tone: 'attn', onPress: () => router.push('/banks') });
+  if (overdueInvoices.length) todos.push({ key: 'overdue', label: `${overdueInvoices.length} overdue`, icon: FileText, tone: 'attn', onPress: () => router.push('/invoices') });
+  if (bookOn && toBook.data?.length) todos.push({ key: 'book', label: `${toBook.data.length} to book`, icon: ArrowLeftRight, onPress: () => router.push('/to-book') });
+  if (failed) todos.push({ key: 'failed', label: `${failed} upload${failed === 1 ? '' : 's'} failed`, icon: Upload, tone: 'error', onPress: () => router.navigate('/receipts') });
+  else if (uploading) todos.push({ key: 'uploading', label: `Uploading ${uploading}`, icon: Upload, onPress: () => router.navigate('/receipts') });
 
   const refreshing = accounts.isRefetching || kpi.isRefetching || missing.isRefetching;
   const refresh = () => Promise.all([accounts.refetch(), kpi.refetch(), missing.refetch()]);
@@ -117,77 +124,17 @@ export default function Overview() {
           ) : null}
         </Reveal>
 
-        {/* To do */}
+        {/* What needs you: one line of pills, each opening its screen */}
         <Reveal index={1} style={{ paddingTop: space(6) }}>
-          <View style={st.card}>
-            <TodoRow
-              icon={<FileWarning size={18} strokeWidth={1.5} color={missingCount ? hex.attn : hex.mutedForeground} />}
-              title={missing.isPending || missingCount ? 'Payments missing a receipt' : 'Every payment has a receipt'}
-              meta={lookbackLabel(days)}
-              count={missing.isPending ? null : missingCount}
-              onPress={() => router.navigate('/receipts')}
-            />
-            {approvals ? (
-              <>
-                <View style={st.innerDivider} />
-                <TodoRow
-                  icon={<Bot size={18} strokeWidth={1.5} color={hex.attn} />}
-                  title="Waiting for your approval"
-                  meta="Prepared by Claude or the receipt hunt"
-                  count={approvals}
-                  onPress={() => router.push('/approvals')}
-                />
-              </>
-            ) : null}
-            {brokenBanks.length ? (
-              <>
-                <View style={st.innerDivider} />
-                <TodoRow
-                  icon={<Landmark size={18} strokeWidth={1.5} color={hex.attn} />}
-                  title={brokenBanks.length === 1 ? `${brokenBanks[0].bank} needs attention` : 'Bank connections need attention'}
-                  meta="New payments stop coming in until it is fixed"
-                  count={brokenBanks.length > 1 ? brokenBanks.length : 0}
-                  onPress={() => router.push('/banks')}
-                />
-              </>
-            ) : null}
-            {overdueInvoices.length ? (
-              <>
-                <View style={st.innerDivider} />
-                <TodoRow
-                  icon={<FileText size={18} strokeWidth={1.5} color={hex.attn} />}
-                  title="Overdue invoices"
-                  meta={formatMoney(overdueInvoices.filter((i) => i.currency === 'SEK').reduce((a, i) => a + i.remaining_amount, 0))}
-                  count={overdueInvoices.length}
-                  onPress={() => router.push('/invoices')}
-                />
-              </>
-            ) : null}
-            {bookOn ? (
-              <>
-                <View style={st.innerDivider} />
-                <TodoRow
-                  icon={<ArrowLeftRight size={18} strokeWidth={1.5} color={hex.mutedForeground} />}
-                  title={toBook.data?.length === 0 ? 'Everything is booked' : 'Payments to book'}
-                  meta={lookbackLabel(days)}
-                  count={toBook.isPending ? null : (toBook.data?.length ?? 0)}
-                  onPress={() => router.push('/to-book')}
-                />
-              </>
-            ) : null}
-            {uploading ? (
-              <>
-                <View style={st.innerDivider} />
-                <TodoRow
-                  icon={<Upload size={18} strokeWidth={1.5} color={failed ? hex.destructive : hex.mutedForeground} />}
-                  title={failed ? 'Uploads need attention' : 'Uploading receipts'}
-                  meta={failed ? 'Keep the paper until they are archived' : 'Safe to close the app'}
-                  count={uploading}
-                  onPress={() => router.navigate('/receipts')}
-                />
-              </>
-            ) : null}
-          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={st.pillsScroll} contentContainerStyle={st.pills}>
+            {todos.length ? (
+              todos.map(({ key, ...t }) => <TodoPill key={key} {...t} />)
+            ) : missing.isPending ? (
+              <Skeleton width={140} height={36} style={{ borderRadius: 18 }} />
+            ) : (
+              <TodoPill key="done" label="All done" tone="done" icon={CircleCheck} onPress={() => router.navigate('/receipts')} />
+            )}
+          </ScrollView>
         </Reveal>
 
         {/* Money */}
@@ -273,37 +220,15 @@ export default function Overview() {
   );
 }
 
-function TodoRow({
-  icon,
-  title,
-  meta,
-  count,
-  onPress,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  meta: string;
-  count: number | null;
-  onPress: () => void;
-}) {
+type Todo = { key: string; label: string; icon: LucideIcon; tone?: 'attn' | 'error' | 'done'; onPress: () => void };
+
+function TodoPill({ label, icon: Icon, tone, onPress }: Omit<Todo, 'key'>) {
   const hex = useHex();
+  const color = tone === 'attn' ? hex.attn : tone === 'error' ? hex.destructive : tone === 'done' ? hex.success : hex.mutedForeground;
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [st.todo, pressed && { backgroundColor: colors.muted }]}>
-      {icon}
-      <View style={{ flex: 1, gap: 2 }}>
-        <Text style={type.body} numberOfLines={1}>
-          {title}
-        </Text>
-        <Text style={type.meta}>{meta}</Text>
-      </View>
-      {count == null ? (
-        <Skeleton width={28} height={20} />
-      ) : count > 0 ? (
-        <View style={st.count}>
-          <Text style={st.countText}>{count}</Text>
-        </View>
-      ) : null}
-      <ChevronRight size={16} strokeWidth={1.5} color={hex.mutedForeground} />
+    <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [st.pill, pressed && { backgroundColor: colors.muted }]}>
+      <Icon size={16} strokeWidth={1.5} color={color} />
+      <Text style={st.pillText}>{label}</Text>
     </Pressable>
   );
 }
@@ -343,26 +268,19 @@ function relativeHours(h: number) {
 }
 
 const st = StyleSheet.create({
-  card: { borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, borderRadius: radius.panel, overflow: 'hidden' },
-  todo: {
+  pillsScroll: { marginHorizontal: -space(4) },
+  pills: { paddingHorizontal: space(4), gap: space(2) },
+  pill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: space(3),
-    paddingHorizontal: space(4),
-    paddingVertical: space(3),
-    minHeight: 60,
-  },
-  innerDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginLeft: space(12) },
-  count: {
-    backgroundColor: colors.foreground,
+    gap: space(2),
+    height: 36,
+    paddingHorizontal: space(3) + 2,
     borderRadius: radius.pill,
-    minWidth: 24,
-    height: 22,
-    paddingHorizontal: 7,
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
   },
-  countText: { fontFamily: fonts.medium, fontSize: 12, color: colors.onPrimary, fontVariant: ['tabular-nums'] },
+  pillText: { fontFamily: fonts.medium, fontSize: 14, color: colors.foreground, fontVariant: ['tabular-nums'] },
   greetingRow: { flexDirection: 'row', alignItems: 'center', gap: space(3) },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: space(3), paddingTop: space(6) },
   tileBox: { flexBasis: '47%', flexGrow: 1, borderRadius: radius.panel },
