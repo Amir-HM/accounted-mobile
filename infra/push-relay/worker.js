@@ -87,6 +87,7 @@ async function poll(env) {
         title: 'Snap the receipt',
         body: `${tidy(t.merchant_name || t.description)} · ${money(t.amount, t.currency)}`,
         data: { url: `/payment/${t.id}`, transactionId: t.id },
+        categoryId: 'payment', // Scan receipt / Later buttons, registered by the app
         sound: 'default',
       })),
     ),

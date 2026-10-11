@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Image as ImageIcon, Pencil, ScanLine } from 'lucide-react-native';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { Reveal } from '@/components/motion';
@@ -20,7 +20,7 @@ import { merchantName, promptMerchantName, useMerchantNames } from '@/lib/mercha
 
 export default function PaymentScreen() {
   const own = useMerchantNames();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, scan } = useLocalSearchParams<{ id: string; scan?: string }>();
   const conn = useConnection();
   const accounts = useCashAccounts();
   const [busy, setBusy] = useState<CaptureMethod | null>(null);
@@ -56,6 +56,15 @@ export default function PaymentScreen() {
       setBusy(null);
     }
   }
+
+  // Opened from "Snap the receipt": go straight to the scanner, once.
+  const autoScanned = useRef(false);
+  useEffect(() => {
+    if (scan !== '1' || !t || autoScanned.current) return;
+    autoScanned.current = true;
+    const timer = setTimeout(() => void capture('scan'), 350); // after the push animation
+    return () => clearTimeout(timer);
+  });
 
   function noReceipt() {
     if (!t) return;

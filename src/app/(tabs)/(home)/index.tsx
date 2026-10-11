@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { ArrowLeftRight, Bot, CircleCheck, FileText, FileWarning, Landmark, Percent, ScanLine, Upload, type LucideIcon } from 'lucide-react-native';
+import { ArrowLeftRight, Bot, CircleCheck, FileText, FileWarning, Landmark, Link2, Percent, ScanLine, Upload, type LucideIcon } from 'lucide-react-native';
 import { useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,6 +9,7 @@ import { Reveal, Skeleton } from '@/components/motion';
 import { Attn, Button, Row, SectionLabel, Tag } from '@/components/ui';
 import { captureUnlinked } from '@/lib/capture';
 import { useNamedAccounts } from '@/lib/accounts';
+import { useReceiptMatches } from '@/lib/matches';
 import { ApiError, type Kpi } from '@/lib/api';
 import { useConnection } from '@/lib/connection';
 import { formatMoney, formatMoneyShort, maskIban } from '@/lib/format';
@@ -60,6 +61,7 @@ export default function Overview() {
   const pending = usePendingOps();
   const approvals = pending.data?.length ?? 0;
   const banks = useBankConnections();
+  const matches = useReceiptMatches();
   const invoices = useInvoices();
 
   const inFlight = new Set(captures.filter((c) => c.transaction && c.state !== 'failed').map((c) => c.transaction!.id));
@@ -80,6 +82,7 @@ export default function Overview() {
   const overdueInvoices = unpaidInvoices.filter((i) => isOverdue(i, todayIso));
 
   const todos: Todo[] = [];
+  if (matches.length) todos.push({ key: 'matches', label: `${matches.length} to attach`, icon: Link2, tone: 'attn', onPress: () => router.navigate('/receipts') });
   if (missingCount) todos.push({ key: 'missing', label: `${missingCount} receipt${missingCount === 1 ? '' : 's'}`, icon: FileWarning, tone: 'attn', onPress: () => router.navigate('/receipts') });
   if (approvals) todos.push({ key: 'approvals', label: `${approvals} to approve`, icon: Bot, tone: 'attn', onPress: () => router.push('/approvals') });
   if (brokenBanks.length) todos.push({ key: 'banks', label: brokenBanks.length === 1 ? brokenBanks[0].bank : `${brokenBanks.length} banks`, icon: Landmark, tone: 'attn', onPress: () => router.push('/banks') });

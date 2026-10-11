@@ -2,9 +2,9 @@ import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { router } from 'expo-router';
 import { CircleCheck, Plus, ScanLine } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
-import { RefreshControl, StyleSheet, View } from 'react-native';
+import { RefreshControl, StyleSheet, Text, View } from 'react-native';
 
-import { CaptureRow } from '@/components/capture-row';
+import { CaptureRow, CaptureThumb } from '@/components/capture-row';
 import { SwipeTxRow } from '@/components/swipe-tx-row';
 import { Skeleton } from '@/components/motion';
 import { Attn, Button, EmptyState, SectionLabel, Segmented, TopBar } from '@/components/ui';
@@ -12,12 +12,16 @@ import type { Transaction } from '@/lib/api';
 import { captureUnlinked } from '@/lib/capture';
 import { useHiddenIds, useMissingReceipts } from '@/lib/queries';
 import { useCaptures, type Capture } from '@/lib/queue';
-import { colors, fonts, space } from '@/lib/theme';
+import { formatMoney } from '@/lib/format';
+import { attachMatch, useReceiptMatches, type ReceiptMatch } from '@/lib/matches';
+import { merchantName, useMerchantNames } from '@/lib/merchants';
+import { colors, fonts, space, type } from '@/lib/theme';
 
 type Item =
   | { kind: 'label'; key: string; title: string; right?: string }
   | { kind: 'capture'; key: string; capture: Capture; last: boolean }
   | { kind: 'tx'; key: string; tx: Transaction; last: boolean }
+  | { kind: 'match'; key: string; match: ReceiptMatch; last: boolean }
   | { kind: 'empty'; key: string }
   | { kind: 'loading'; key: string };
 
@@ -26,6 +30,7 @@ export default function Receipts() {
   const missing = useMissingReceipts();
   const hidden = useHiddenIds();
   const captures = useCaptures();
+  const matches = useReceiptMatches();
   const [view, setView] = useState<'missing' | 'attached'>('missing');
   const list = useRef<FlashListRef<Item>>(null);
 
@@ -42,12 +47,17 @@ export default function Receipts() {
 
   const inFlight = new Set(captures.filter((c) => c.transaction && c.state !== 'failed').map((c) => c.transaction!.id));
   const todo = (missing.data ?? []).filter((t) => !hidden.includes(t.id) && !inFlight.has(t.id));
-  const onPhone = captures.filter((c) => !(c.state === 'done' && c.transaction));
+  const matched = new Set(matches.map((m) => m.capture.id));
+  const onPhone = captures.filter((c) => !(c.state === 'done' && c.transaction) && !matched.has(c.id));
   const attached = captures.filter((c) => c.state === 'done' && c.transaction);
   const failed = onPhone.filter((c) => c.state === 'failed').length;
 
   const items: Item[] = [];
   if (view === 'missing') {
+    if (matches.length) {
+      items.push({ kind: 'label', key: 'l-match', title: 'Ready to attach' });
+      matches.forEach((m, i) => items.push({ kind: 'match', key: `m-${m.capture.id}`, match: m, last: i === matches.length - 1 }));
+    }
     if (onPhone.length) {
       items.push({ kind: 'label', key: 'l-phone', title: 'On this iPhone' });
       onPhone.forEach((c, i) => items.push({ kind: 'capture', key: c.id, capture: c, last: i === onPhone.length - 1 }));
@@ -121,6 +131,8 @@ function ItemView({ item, view }: { item: Item; view: 'missing' | 'attached' }) 
       );
     case 'tx':
       return <SwipeTxRow tx={item.tx} last={item.last} />;
+    case 'match':
+      return <MatchRow match={item.match} last={item.last} />;
     case 'loading':
       return (
         <View style={{ paddingTop: space(2) }}>
@@ -147,7 +159,26 @@ function ItemView({ item, view }: { item: Item; view: 'missing' | 'attached' }) 
   }
 }
 
+/** A receipt scanned before its payment arrived, next to the payment it fits. */
+function MatchRow({ match, last }: { match: ReceiptMatch; last: boolean }) {
+  const own = useMerchantNames();
+  const { capture: c, tx } = match;
+  return (
+    <View style={[st.match, !last && st.divider]}>
+      <CaptureThumb capture={c} />
+      <View style={{ flex: 1, gap: 2 }}>
+        <Text style={type.body} numberOfLines={1}>
+          {merchantName(tx.merchant_name ?? tx.description, own)}
+        </Text>
+        <Text style={type.meta}>{`${formatMoney(tx.amount, tx.currency)} · ${tx.date.slice(0, 10)} · same amount and date`}</Text>
+      </View>
+      <Button size="sm" title="Attach" onPress={() => attachMatch(match)} />
+    </View>
+  );
+}
+
 const st = StyleSheet.create({
+  match: { flexDirection: 'row', alignItems: 'center', gap: space(3), minHeight: 64, paddingVertical: space(2) },
   tx: { flexDirection: 'row', alignItems: 'center', gap: space(3), minHeight: 52 },
   divider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
   date: { fontFamily: fonts.body, fontSize: 13, color: colors.mutedForeground, fontVariant: ['tabular-nums'], width: 84 },

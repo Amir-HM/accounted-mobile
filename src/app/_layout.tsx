@@ -28,13 +28,31 @@ Notifications.setNotificationHandler({
   handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: false, shouldSetBadge: false }),
 });
 
-/** Tapping "Snap the receipt" opens that payment, also from a cold start. */
+// "Snap the receipt" carries a Scan button; Later just dismisses it.
+Notifications.setNotificationCategoryAsync('payment', [
+  { identifier: 'scan', buttonTitle: 'Scan receipt', options: { opensAppToForeground: true } },
+  { identifier: 'later', buttonTitle: 'Later', options: { opensAppToForeground: false } },
+]).catch(() => {});
+
+let handledResponse: string | null = null;
+
+/**
+ * Tapping "Snap the receipt" (or its Scan button) opens the scanner for that
+ * payment, also from a cold start; cancelling the scanner leaves you on the
+ * payment. Approvals open the approvals list.
+ */
 function useNotificationRouting(enabled: boolean) {
   useEffect(() => {
     if (!enabled) return;
     const open = (r: Notifications.NotificationResponse | null) => {
-      const url = r?.notification.request.content.data?.url;
-      if (typeof url === 'string' && (url.startsWith('/payment/') || url === '/approvals')) router.push(url as never);
+      if (!r || r.notification.request.identifier === handledResponse) return;
+      handledResponse = r.notification.request.identifier;
+      if (r.actionIdentifier === 'later') return;
+      const url = r.notification.request.content.data?.url;
+      if (typeof url !== 'string') return;
+      const payment = url.match(/^\/payment\/([\w-]+)$/);
+      if (payment) router.push({ pathname: '/payment/[id]', params: { id: payment[1], scan: '1' } });
+      else if (url === '/approvals') router.push('/approvals');
     };
     open(Notifications.getLastNotificationResponse());
     const sub = Notifications.addNotificationResponseReceivedListener(open);
