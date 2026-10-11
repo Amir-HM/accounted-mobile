@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { Alert, ScrollView, Text, View } from 'react-native';
 
 import { Reveal } from '@/components/motion';
+import { usePref } from '@/lib/prefs';
 import { hideWithUndo } from '@/components/swipe-tx-row';
 import { Attn, Button, Divider, Row, TopBar } from '@/components/ui';
 import { nameAccount, useLedgerNames, useNicknames } from '@/lib/accounts';
@@ -21,6 +22,7 @@ export default function PaymentScreen() {
   const conn = useConnection();
   const accounts = useCashAccounts();
   const [busy, setBusy] = useState<CaptureMethod | null>(null);
+  const bookOn = usePref('bookInAccounted');
 
   // Seed from the missing list so the screen paints at once, then refresh.
   const cached = queryClient
@@ -110,6 +112,12 @@ export default function PaymentScreen() {
               Keep the paper until the upload is confirmed.
             </Text>
           </Reveal>
+
+          {bookOn && !t.journal_entry_id ? (
+            <View style={{ paddingTop: space(6) }}>
+              <Button title="Book this payment" variant="outline" onPress={() => router.push({ pathname: '/book/[id]', params: { id: t.id } })} />
+            </View>
+          ) : null}
 
           <View style={{ paddingTop: space(8), alignItems: 'center' }}>
             <Button title="No receipt needed" variant="link" onPress={noReceipt} />

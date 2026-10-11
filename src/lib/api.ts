@@ -15,7 +15,7 @@ export class ApiError extends Error {
   }
 }
 
-type Envelope<T> = { data: T; meta?: { next_cursor?: string | null } };
+type Envelope<T> = { data: T; meta?: { next_cursor?: string | null; audit?: { voucher_number?: string } } };
 
 export async function request<T>(
   conn: Pick<Connection, 'serverUrl' | 'apiKey'>,
@@ -167,3 +167,52 @@ export const attachDocument = (c: Connection, transactionId: string, documentId:
   ).then((r) => r.data);
 
 export const documentsUrl = (c: Connection) => `${c.serverUrl}/api/v1/companies/${c.companyId}/documents`;
+
+// ---- Booking and the missing-underlag mark ----
+
+export type CategorizeArgs = {
+  category?: string;
+  account_override?: string;
+  vat_treatment?: 'standard_25' | 'reduced_12' | 'reduced_6' | 'reverse_charge' | 'export' | 'exempt';
+  template_id?: string;
+  counterparty_template_id?: string;
+  inbox_item_id?: string;
+  user_description?: string;
+};
+
+export type BookingPreview = {
+  debit_account?: string;
+  credit_account?: string;
+  vat_lines?: { account_number: string; debit_amount: number; credit_amount: number; description?: string }[];
+};
+
+/** The verifikat a categorize would create, without creating it. */
+export async function previewCategorize(c: Connection, txId: string, args: CategorizeArgs): Promise<BookingPreview | null> {
+  const r = await request<{ preview?: { mapping?: BookingPreview } }>(c, `/companies/${c.companyId}/transactions/${txId}/categorize?dry_run=true`, {
+    method: 'POST',
+    body: JSON.stringify({ is_business: true, ...args }),
+    idempotencyKey: `preview-${txId}-${Date.now()}`,
+  });
+  return r.data?.preview?.mapping ?? null;
+}
+
+/** Books an unbooked bank transaction: creates the verifikat. Returns the voucher number when the server reports it. */
+export async function categorize(c: Connection, txId: string, args: CategorizeArgs): Promise<{ journalEntryId: string | null; voucher: string | null }> {
+  const r = await request<{ journal_entry_id?: string | null }>(c, `/companies/${c.companyId}/transactions/${txId}/categorize`, {
+    method: 'POST',
+    body: JSON.stringify({ is_business: true, ...args }),
+    idempotencyKey: `categorize-${txId}-${args.category ?? ''}-${args.account_override ?? ''}-${args.vat_treatment ?? ''}`,
+  });
+  return { journalEntryId: r.data?.journal_entry_id ?? null, voucher: r.meta?.audit?.voucher_number ?? null };
+}
+
+/** "Inget underlag krävs" on a posted verifikat (transfers, fees, tax payments). */
+export const markNoDocumentRequired = (c: Connection, journalEntryId: string, reason: string) =>
+  request(c, `/companies/${c.companyId}/journal-entries/${journalEntryId}/no-document-required`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+    idempotencyKey: `nodoc-${journalEntryId}`,
+  });
+
+export const unmarkNoDocumentRequired = (c: Connection, journalEntryId: string) =>
+  request(c, `/companies/${c.companyId}/journal-entries/${journalEntryId}/no-document-required`, { method: 'DELETE' });

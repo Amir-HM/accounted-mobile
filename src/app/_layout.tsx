@@ -34,7 +34,7 @@ function useNotificationRouting(enabled: boolean) {
     if (!enabled) return;
     const open = (r: Notifications.NotificationResponse | null) => {
       const url = r?.notification.request.content.data?.url;
-      if (typeof url === 'string' && url.startsWith('/payment/')) router.push(url as never);
+      if (typeof url === 'string' && (url.startsWith('/payment/') || url === '/approvals')) router.push(url as never);
     };
     open(Notifications.getLastNotificationResponse());
     const sub = Notifications.addNotificationResponseReceivedListener(open);
@@ -128,6 +128,9 @@ export default function RootLayout() {
             <Stack.Screen name="payment/[id]" />
             <Stack.Screen name="account/[id]" />
             <Stack.Screen name="capture/[id]" />
+            <Stack.Screen name="book/[id]" />
+            <Stack.Screen name="to-book" />
+            <Stack.Screen name="approvals" />
             <Stack.Screen name="viewer/[id]" options={{ presentation: 'fullScreenModal', animation: 'fade' }} />
             <Stack.Screen
               name="add"

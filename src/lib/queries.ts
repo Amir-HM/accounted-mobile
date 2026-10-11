@@ -13,6 +13,8 @@ import {
   type Transaction,
 } from './api';
 import { useConnection, type Connection } from './connection';
+import { listPending, suggestCategories } from './mcp';
+import { usePref } from './prefs';
 
 const rateLimited = (e: unknown) => e instanceof ApiError && e.status === 429;
 
@@ -143,3 +145,49 @@ export function useLookbackDays(): number {
 }
 
 export const lookbackLabel = (d: number) => (d >= 365 ? 'Last 12 months' : `Last ${d} days`);
+
+// ---- Booking and approvals ----
+
+/** Unbooked bank transactions (in and out) in the lookback window, newest first. */
+export function useToBook() {
+  const c = useConnection();
+  const on = usePref('bookInAccounted');
+  const days = useLookbackDays();
+  return useQuery({
+    queryKey: ['to-book', c?.serverUrl, c?.companyId, days],
+    queryFn: async () => {
+      const since = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
+      const rows = await listTransactionsSince(c!, since);
+      return rows.filter((t) => !t.journal_entry_id).sort((a, b) => b.date.localeCompare(a.date));
+    },
+    enabled: !!c && on,
+  });
+}
+
+export function useSuggestions(txId: string | undefined) {
+  const c = useConnection();
+  return useQuery({
+    queryKey: ['suggest', c?.serverUrl, txId],
+    queryFn: async () => (await suggestCategories(c!, [txId!]))[txId!] ?? [],
+    enabled: !!c && !!txId,
+    staleTime: 300_000,
+  });
+}
+
+/** Operations waiting for approval. A key without pending_operations:read simply sees none. */
+export function usePendingOps() {
+  const c = useConnection();
+  return useQuery({
+    queryKey: ['pending-ops', c?.serverUrl, c?.companyId],
+    queryFn: async () => {
+      try {
+        return await listPending(c!);
+      } catch (e) {
+        if (e instanceof ApiError && /SCOPE|FORBIDDEN|UNAUTHORIZED/.test(e.code)) return [];
+        throw e;
+      }
+    },
+    enabled: !!c,
+    refetchInterval: 60_000,
+  });
+}

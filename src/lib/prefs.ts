@@ -2,8 +2,8 @@ import Storage from 'expo-sqlite/kv-store';
 import { useSyncExternalStore } from 'react';
 
 /** Small device-local preferences (booleans), observable from components. */
-export type PrefKey = 'faceIdLock' | 'privacyCover' | 'pushPrimed' | 'openOnScanner';
-const DEFAULTS: Record<PrefKey, boolean> = { faceIdLock: false, privacyCover: true, pushPrimed: false, openOnScanner: false };
+export type PrefKey = 'faceIdLock' | 'privacyCover' | 'pushPrimed' | 'openOnScanner' | 'bookInAccounted';
+const DEFAULTS: Record<PrefKey, boolean> = { faceIdLock: false, privacyCover: true, pushPrimed: false, openOnScanner: false, bookInAccounted: false };
 
 const cache = new Map<PrefKey, boolean>();
 const listeners = new Set<() => void>();

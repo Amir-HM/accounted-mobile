@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { ChevronRight, FileWarning, ScanLine, Upload } from 'lucide-react-native';
+import { ArrowLeftRight, Bot, ChevronRight, FileWarning, ScanLine, Upload } from 'lucide-react-native';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { MonthBars } from '@/components/month-bars';
@@ -10,7 +10,8 @@ import { useNamedAccounts } from '@/lib/accounts';
 import type { Kpi } from '@/lib/api';
 import { useConnection } from '@/lib/connection';
 import { formatMoney, formatMoneyShort, maskIban } from '@/lib/format';
-import { lookbackLabel, useCashAccounts, useCurrentKpi, useHiddenIds, useLookbackDays, useMissingReceipts } from '@/lib/queries';
+import { usePref } from '@/lib/prefs';
+import { lookbackLabel, useCashAccounts, useCurrentKpi, useHiddenIds, useLookbackDays, useMissingReceipts, usePendingOps, useToBook } from '@/lib/queries';
 import { pendingCount, useCaptures } from '@/lib/queue';
 import { colors, fonts, radius, space, type, useHex } from '@/lib/theme';
 
@@ -47,6 +48,10 @@ export default function Overview() {
   const hidden = useHiddenIds();
   const captures = useCaptures();
   const days = useLookbackDays();
+  const bookOn = usePref('bookInAccounted');
+  const toBook = useToBook();
+  const pending = usePendingOps();
+  const approvals = pending.data?.length ?? 0;
 
   const inFlight = new Set(captures.filter((c) => c.transaction && c.state !== 'failed').map((c) => c.transaction!.id));
   const missingCount = (missing.data ?? []).filter((t) => !hidden.includes(t.id) && !inFlight.has(t.id)).length;
@@ -98,6 +103,30 @@ export default function Overview() {
               count={missing.isPending ? null : missingCount}
               onPress={() => router.navigate('/receipts')}
             />
+            {approvals ? (
+              <>
+                <View style={st.innerDivider} />
+                <TodoRow
+                  icon={<Bot size={18} strokeWidth={1.5} color={hex.attn} />}
+                  title="Waiting for your approval"
+                  meta="Prepared by Claude or the receipt hunt"
+                  count={approvals}
+                  onPress={() => router.push('/approvals')}
+                />
+              </>
+            ) : null}
+            {bookOn ? (
+              <>
+                <View style={st.innerDivider} />
+                <TodoRow
+                  icon={<ArrowLeftRight size={18} strokeWidth={1.5} color={hex.mutedForeground} />}
+                  title={toBook.data?.length === 0 ? 'Everything is booked' : 'Payments to book'}
+                  meta={lookbackLabel(days)}
+                  count={toBook.isPending ? null : (toBook.data?.length ?? 0)}
+                  onPress={() => router.push('/to-book')}
+                />
+              </>
+            ) : null}
             {uploading ? (
               <>
                 <View style={st.innerDivider} />

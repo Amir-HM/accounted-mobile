@@ -2,7 +2,8 @@
 //
 // Accounted has no public "new bank transaction" webhook yet, so this Worker
 // polls the server every few minutes with a read-only key (transactions:read)
-// and sends an Expo push for each new outgoing payment. Phones register their
+// and sends an Expo push for each new outgoing payment, and for each new
+// operation waiting for approval (read with pending_operations:read). Phones register their
 // Expo push token by proving they hold a key for the same company; the
 // relay never stores the phone's key.
 //
@@ -37,6 +38,20 @@ function tidy(s) {
   return s;
 }
 
+/** Operations staged by Claude, agents or the receipt hunt that wait for a human. */
+async function pendingOps(env) {
+  const r = await fetch(`${env.SERVER}/api/extensions/ext/mcp-server/mcp`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${env.ACCOUNTED_KEY}`, 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'gnubok_list_pending_operations', arguments: { status: 'pending', limit: 50 } } }),
+  });
+  if (!r.ok) return [];
+  const body = await r.json().catch(() => null);
+  const res = body?.result;
+  const data = res?.structuredContent ?? (res?.content?.[0]?.text ? JSON.parse(res.content[0].text) : null);
+  return data?.operations ?? [];
+}
+
 async function poll(env) {
   const list = await tokens(env);
   const since = new Date(Date.now() - LOOKBACK_DAYS * 86400_000).toISOString().slice(0, 10);
@@ -53,28 +68,45 @@ async function poll(env) {
   // Keep the seen-set bounded to what the lookback can return.
   const keep = new Set(rows.map((t) => t.id));
   await env.STATE.put('seen', JSON.stringify([...seen].filter((id) => keep.has(id))));
+
+  const ops = await pendingOps(env).catch(() => []);
+  const seenOps = new Set(JSON.parse((await env.STATE.get('seenOps')) || '[]'));
+  const freshOps = ops.filter((o) => !seenOps.has(o.id));
+  await env.STATE.put('seenOps', JSON.stringify(ops.map((o) => o.id)));
+
   if (firstRun) {
     await env.STATE.put('bootstrapped', new Date().toISOString());
     return { notified: 0, bootstrap: fresh.length };
   }
-  if (!fresh.length || !list.length) return { notified: 0 };
+  if ((!fresh.length && !freshOps.length) || !list.length) return { notified: 0 };
 
-  const messages = fresh.flatMap((t) =>
-    list.map((to) => ({
-      to,
-      title: 'Snap the receipt',
-      body: `${tidy(t.merchant_name || t.description)} · ${money(t.amount, t.currency)}`,
-      data: { url: `/payment/${t.id}`, transactionId: t.id },
-      sound: 'default',
-    })),
-  );
+  const messages = [
+    ...fresh.flatMap((t) =>
+      list.map((to) => ({
+        to,
+        title: 'Snap the receipt',
+        body: `${tidy(t.merchant_name || t.description)} · ${money(t.amount, t.currency)}`,
+        data: { url: `/payment/${t.id}`, transactionId: t.id },
+        sound: 'default',
+      })),
+    ),
+    ...freshOps.flatMap((o) =>
+      list.map((to) => ({
+        to,
+        title: 'Waiting for your approval',
+        body: `${o.actor_label ? `${o.actor_label}: ` : ''}${o.title}`,
+        data: { url: '/approvals', operationId: o.id },
+        sound: 'default',
+      })),
+    ),
+  ];
   const res = await fetch(EXPO_PUSH, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(messages) });
   const out = await res.json().catch(() => ({}));
   // Drop tokens Expo reports as gone.
   const dead = new Set();
   (out.data || []).forEach((tk, i) => tk?.details?.error === 'DeviceNotRegistered' && dead.add(messages[i].to));
   if (dead.size) await env.STATE.put('tokens', JSON.stringify(list.filter((t) => !dead.has(t))));
-  return { notified: fresh.length };
+  return { notified: fresh.length, approvals: freshOps.length };
 }
 
 export default {

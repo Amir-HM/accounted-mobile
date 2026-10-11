@@ -8,19 +8,61 @@ import ReanimatedSwipeable, { type SwipeableMethods } from 'react-native-gesture
 import type { Transaction } from '@/lib/api';
 import { captureAndQueue, type CaptureMethod } from '@/lib/capture';
 import { formatMoney, tidyMerchant } from '@/lib/format';
-import { setNoReceiptNeeded } from '@/lib/queries';
+import { markNoDocumentRequired, unmarkNoDocumentRequired } from '@/lib/api';
+import { loadConnection } from '@/lib/connection';
+import { queryClient, setNoReceiptNeeded } from '@/lib/queries';
+import { reportActionError } from '@/lib/scope';
 import { showToast } from '@/lib/toast';
 import { colors, fonts, space, type, useHex } from '@/lib/theme';
 
 const ACTION_W = 84;
 
-export function hideWithUndo(tx: Pick<Transaction, 'id' | 'merchant_name' | 'description'>) {
-  setNoReceiptNeeded(tx.id, true);
-  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  showToast(`${tidyMerchant(tx.merchant_name ?? tx.description)} hidden`, 'default', {
-    label: 'Undo',
-    onPress: () => setNoReceiptNeeded(tx.id, false),
-  });
+const REASONS = [
+  { label: 'Transfer between own accounts', reason: 'Överföring mellan egna konton' },
+  { label: 'Bank or card fee', reason: 'Bank- eller kortavgift utan separat underlag' },
+  { label: 'Tax or authority payment', reason: 'Betalning till Skatteverket eller myndighet' },
+  { label: 'Other: no external underlag exists', reason: 'Inget externt underlag finns' },
+];
+
+/**
+ * "No receipt needed". A booked payment gets Accounted's own mark on its
+ * verifikat (BFL 5 kap 6 §: the verifikat is then its own documentation),
+ * with the reason recorded in the audit log, so the web stops counting it
+ * too. An unbooked payment can only be hidden on this iPhone until booked.
+ */
+export function hideWithUndo(tx: Pick<Transaction, 'id' | 'merchant_name' | 'description' | 'journal_entry_id'>) {
+  const name = tidyMerchant(tx.merchant_name ?? tx.description);
+  const conn = loadConnection();
+  if (!tx.journal_entry_id || !conn) {
+    setNoReceiptNeeded(tx.id, true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    showToast(`${name} hidden on this iPhone`, 'default', { label: 'Undo', onPress: () => setNoReceiptNeeded(tx.id, false) });
+    return;
+  }
+  const je = tx.journal_entry_id;
+  ActionSheetIOS.showActionSheetWithOptions(
+    { title: 'Why is there no receipt?', message: 'Recorded on the verifikat in Accounted.', options: [...REASONS.map((r) => r.label), 'Cancel'], cancelButtonIndex: REASONS.length },
+    async (i) => {
+      if (i >= REASONS.length) return;
+      setNoReceiptNeeded(tx.id, true);
+      try {
+        await markNoDocumentRequired(conn, je, REASONS[i].reason);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        void queryClient.invalidateQueries({ queryKey: ['missing'] });
+        showToast(`${name}: no receipt needed`, 'default', {
+          label: 'Undo',
+          onPress: async () => {
+            setNoReceiptNeeded(tx.id, false);
+            await unmarkNoDocumentRequired(conn, je).catch((e) => reportActionError(e, 'Undo'));
+            void queryClient.invalidateQueries({ queryKey: ['missing'] });
+          },
+        });
+      } catch (e) {
+        setNoReceiptNeeded(tx.id, false);
+        reportActionError(e, 'Marking it');
+      }
+    },
+  );
 }
 
 export async function captureFor(tx: Transaction, method: CaptureMethod) {

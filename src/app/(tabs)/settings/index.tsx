@@ -86,6 +86,14 @@ export default function Settings() {
         />
         <PrefRow pref="openOnScanner" title="Open on the scanner" meta="Start with the camera when the app opens" last />
 
+        <SectionLabel>Booking</SectionLabel>
+        <PrefRow
+          pref="bookInAccounted"
+          title="Book in Accounted"
+          meta="Book payments from the phone. Leave off while another system (like Bokio) is where you book and you import into Accounted."
+          last
+        />
+
         <SectionLabel>Notifications</SectionLabel>
         <SwitchRow
           title="Snap the receipt"

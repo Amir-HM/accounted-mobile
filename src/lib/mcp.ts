@@ -60,3 +60,44 @@ export const completeUpload = (c: Connection, uploadId: string, fileName: string
     extracted_data?: Extraction;
     deduplicated?: boolean;
   }>(c, 'gnubok_complete_document_upload', { upload_id: uploadId, file_name: fileName, mime_type: mimeType });
+
+// ---- Booking suggestions ----
+
+export type Proposal = {
+  id: string;
+  source: string;
+  label: string;
+  why: string;
+  confidence: number;
+  account: string | null;
+  vat_treatment: string | null;
+  categorize_args: Record<string, string>;
+};
+
+export async function suggestCategories(c: Connection, txIds: string[]): Promise<Record<string, Proposal[]>> {
+  const r = await callTool<{ proposals: Record<string, Proposal[]> }>(c, 'gnubok_suggest_categories', { transaction_ids: txIds.slice(0, 20) });
+  return r.proposals ?? {};
+}
+
+// ---- Approvals (operations staged by Claude, agents or the receipt hunt) ----
+
+export type PendingOp = {
+  id: string;
+  operation_type: string;
+  title: string;
+  risk_level: 'low' | 'medium' | 'high';
+  actor_label: string | null;
+  created_at: string;
+  preview_data?: Record<string, unknown>;
+};
+
+export async function listPending(c: Connection): Promise<PendingOp[]> {
+  const r = await callTool<{ operations: PendingOp[] }>(c, 'gnubok_list_pending_operations', { status: 'pending', limit: 50 });
+  return r.operations ?? [];
+}
+
+export const approvePending = (c: Connection, id: string, confirmed: boolean) =>
+  callTool<{ status: string; operation_status?: string }>(c, 'gnubok_approve_pending_operation', { operation_id: id, ...(confirmed ? { confirmed: true } : {}) });
+
+export const rejectPending = (c: Connection, id: string) =>
+  callTool<{ status: string }>(c, 'gnubok_reject_pending_operation', { operation_id: id });

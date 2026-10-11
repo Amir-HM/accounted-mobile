@@ -19,6 +19,9 @@ export const APP_SCOPES = [
   'transactions:read',
   'transactions:write',
   'reports:read',
+  'bookkeeping:write',
+  'pending_operations:read',
+  'pending_operations:approve',
 ];
 
 type Metadata = { authorization_endpoint: string; token_endpoint: string; registration_endpoint?: string };
