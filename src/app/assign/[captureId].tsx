@@ -38,7 +38,11 @@ export default function Assign() {
         </View>
       }
       ListEmptyComponent={
-        <EmptyState icon={Inbox} title="No open payments" message={missing.isPending ? 'Loading…' : 'Every payment in this period already has a receipt.'} />
+        <EmptyState
+          icon={Inbox}
+          title="No open payments"
+          message={missing.isPending ? 'Loading…' : 'Every payment in this period already has a receipt.'}
+        />
       }
       renderItem={({ item: t, index }) => {
         const label = tidyMerchant(t.merchant_name ?? t.description);
@@ -58,7 +62,8 @@ export default function Assign() {
                   },
                 },
               ])
-            }>
+            }
+          >
             <Text style={st.date}>{t.date.slice(0, 10)}</Text>
             <Text style={[type.body, { flex: 1 }]} numberOfLines={1}>
               {label}

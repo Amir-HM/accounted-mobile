@@ -99,6 +99,7 @@ export type Kpi = {
   vatLiability: number;
   totalRevenue: number;
   totalExpenses: number;
+  months: { label: string; income: number; expenses: number; net: number }[];
   period: { start: string; end: string };
 };
 

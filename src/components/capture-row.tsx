@@ -4,7 +4,8 @@ import { View } from 'react-native';
 
 import { Row } from '@/components/ui';
 import { formatMoney, formatRelative } from '@/lib/format';
-import { captureFile, type Capture } from '@/lib/queue';
+import { ProgressLine } from '@/components/motion';
+import { captureFile, useUploadProgress, type Capture } from '@/lib/queue';
 import { colors, radius, useHex } from '@/lib/theme';
 
 export function CaptureThumb({ capture, size = 36 }: { capture: Capture; size?: number }) {
@@ -44,15 +45,19 @@ function status(c: Capture): string {
 }
 
 export function CaptureRow({ capture: c, onPress, last }: { capture: Capture; onPress?: () => void; last?: boolean }) {
+  const progress = useUploadProgress(c.id);
   return (
-    <Row
-      leading={<CaptureThumb capture={c} />}
-      title={c.transaction ? c.transaction.label : c.fileName}
-      meta={status(c)}
-      value={c.transaction ? formatMoney(c.transaction.amount, c.transaction.currency) : undefined}
-      valueTone={c.state === 'failed' ? 'negative' : 'muted'}
-      onPress={onPress}
-      last={last}
-    />
+    <View>
+      <Row
+        leading={<CaptureThumb capture={c} />}
+        title={c.transaction ? c.transaction.label : c.fileName}
+        meta={status(c)}
+        value={c.transaction ? formatMoney(c.transaction.amount, c.transaction.currency) : undefined}
+        valueTone={c.state === 'failed' ? 'negative' : 'muted'}
+        onPress={onPress}
+        last={last && progress == null}
+      />
+      {progress != null ? <ProgressLine value={progress} /> : null}
+    </View>
   );
 }

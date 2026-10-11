@@ -25,7 +25,8 @@ export default function TabsLayout() {
         tabBarStyle: { backgroundColor: hex.background, borderTopColor: hex.border, borderTopWidth: StyleSheet.hairlineWidth },
         tabBarLabelStyle: { fontFamily: fonts.body, fontSize: 12 },
         tabBarBadgeStyle: { backgroundColor: hex.foreground, color: hex.background, fontFamily: fonts.medium, fontSize: 11 },
-      }}>
+      }}
+    >
       <Tabs.Screen
         name="(home)"
         options={{ title: 'Overview', tabBarIcon: ({ color }) => <House size={22} strokeWidth={1.5} color={color} /> }}

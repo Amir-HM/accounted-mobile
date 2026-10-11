@@ -54,7 +54,8 @@ export default function Setup() {
   function fail(e: unknown) {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     if (e instanceof ApiError && e.code === 'INSUFFICIENT_SCOPE') setError(`Access is missing a permission. The app needs: ${SCOPES}.`);
-    else if (e instanceof ApiError && e.status === 401) setError('The server did not accept the key. Check that it is copied in full and not revoked.');
+    else if (e instanceof ApiError && e.status === 401)
+      setError('The server did not accept the key. Check that it is copied in full and not revoked.');
     else setError(e instanceof Error ? e.message : 'Could not connect.');
   }
 

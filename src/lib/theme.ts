@@ -1,3 +1,4 @@
+import { Easing } from 'react-native-reanimated';
 import { DynamicColorIOS, useColorScheme, type ColorValue } from 'react-native';
 
 /**
@@ -62,4 +63,13 @@ export const type = {
   title: { fontFamily: fonts.medium, fontSize: 15, color: colors.foreground },
   display: { fontFamily: fonts.display, fontSize: 32, lineHeight: 38, color: colors.foreground, letterSpacing: -0.4 },
   number: { fontFamily: fonts.display, fontSize: 30, lineHeight: 36, color: colors.foreground, fontVariant: ['tabular-nums' as const] },
+};
+
+// Motion (web: --ease-emphasized for entry, 150ms state / 300ms layout, no bounce).
+export const motion = {
+  emphasized: Easing.bezier(0.23, 1, 0.32, 1),
+  out: Easing.bezier(0.25, 0.46, 0.45, 0.94),
+  fast: 150,
+  base: 300,
+  stagger: 50,
 };

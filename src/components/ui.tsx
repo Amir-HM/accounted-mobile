@@ -1,11 +1,12 @@
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { ChevronLeft, ChevronRight, type LucideIcon } from 'lucide-react-native';
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors, fonts, radius, space, type, useHex } from '@/lib/theme';
+import { colors, fonts, motion, radius, space, type, useHex } from '@/lib/theme';
 
 const HAIRLINE = StyleSheet.hairlineWidth;
 
@@ -86,7 +87,8 @@ export function Row({
             valueTone === 'muted' && { color: colors.mutedForeground },
             valueTone === 'negative' && { color: colors.destructive },
             valueTone === 'positive' && { color: colors.success },
-          ]}>
+          ]}
+        >
           {value}
         </Text>
       ) : null}
@@ -141,11 +143,14 @@ export function Button({
         s.button,
         size === 'sm' ? s.buttonSm : s.buttonLg,
         !title && { width: size === 'sm' ? 36 : 44, paddingHorizontal: 0 },
-        variant === 'primary' ? { backgroundColor: colors.primary } : { borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background },
+        variant === 'primary'
+          ? { backgroundColor: colors.primary }
+          : { borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background },
         pressed && (variant === 'primary' ? { opacity: 0.85 } : { backgroundColor: colors.muted }),
         (disabled || busy) && { opacity: 0.45 },
         style,
-      ]}>
+      ]}
+    >
       {busy ? (
         <ActivityIndicator color={fg} />
       ) : (
@@ -158,7 +163,7 @@ export function Button({
   );
 }
 
-/** Pill-in-pill segmented control with count chips (web SegmentedControl). */
+/** Pill-in-pill segmented control with count chips (web SegmentedControl); the thumb slides. */
 export function Segmented<K extends string>({
   options,
   value,
@@ -168,8 +173,21 @@ export function Segmented<K extends string>({
   value: K;
   onChange: (k: K) => void;
 }) {
+  const [frames, setFrames] = useState<Record<string, { x: number; width: number }>>({});
+  const x = useSharedValue(0);
+  const w = useSharedValue(0);
+  const f = frames[value];
+  useEffect(() => {
+    if (!f) return;
+    const first = w.get() === 0;
+    x.set(first ? f.x : withTiming(f.x, { duration: 220, easing: motion.emphasized }));
+    w.set(first ? f.width : withTiming(f.width, { duration: 220, easing: motion.emphasized }));
+  }, [f, x, w]);
+  const thumb = useAnimatedStyle(() => ({ transform: [{ translateX: x.get() }], width: w.get(), opacity: w.get() ? 1 : 0 }));
+
   return (
     <View style={s.segmented}>
+      <Animated.View style={[s.thumb, thumb]} />
       {options.map((o) => {
         const on = o.key === value;
         return (
@@ -177,11 +195,16 @@ export function Segmented<K extends string>({
             key={o.key}
             accessibilityRole="tab"
             accessibilityState={{ selected: on }}
+            onLayout={(e) => {
+              const { x: ox, width } = e.nativeEvent.layout;
+              setFrames((prev) => ({ ...prev, [o.key]: { x: ox, width } }));
+            }}
             onPress={() => {
               if (!on) Haptics.selectionAsync();
               onChange(o.key);
             }}
-            style={[s.segment, on && s.segmentOn]}>
+            style={s.segment}
+          >
             <Text style={[s.segmentText, !on && { color: colors.mutedForeground }]}>{o.label}</Text>
             {o.count != null ? (
               <View style={s.countChip}>
@@ -242,7 +265,13 @@ export const s = StyleSheet.create({
   topBar: { backgroundColor: colors.background, borderBottomWidth: HAIRLINE, borderBottomColor: colors.border },
   topBarRow: { height: 52, flexDirection: 'row', alignItems: 'center', gap: space(2), paddingHorizontal: space(4) },
   back: { marginLeft: -space(2), width: 32, height: 44, alignItems: 'center', justifyContent: 'center' },
-  sectionLabel: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', paddingTop: space(6), paddingBottom: space(2) },
+  sectionLabel: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    paddingTop: space(6),
+    paddingBottom: space(2),
+  },
   row: { flexDirection: 'row', alignItems: 'center', gap: space(3), minHeight: 52, paddingVertical: space(3) },
   rowDivider: { borderBottomWidth: HAIRLINE, borderBottomColor: colors.border },
   value: { fontFamily: fonts.body, fontSize: 15, color: colors.foreground, fontVariant: ['tabular-nums'] },
@@ -250,7 +279,13 @@ export const s = StyleSheet.create({
   buttonLg: { minHeight: 46, paddingHorizontal: space(6) },
   buttonSm: { minHeight: 36, paddingHorizontal: space(4) },
   buttonText: { fontFamily: fonts.medium, fontSize: 15 },
-  link: { fontFamily: fonts.body, fontSize: 15, color: colors.foreground, textDecorationLine: 'underline', textDecorationColor: colors.border },
+  link: {
+    fontFamily: fonts.body,
+    fontSize: 15,
+    color: colors.foreground,
+    textDecorationLine: 'underline',
+    textDecorationColor: colors.border,
+  },
   segmented: {
     flexDirection: 'row',
     alignSelf: 'flex-start',
@@ -258,8 +293,24 @@ export const s = StyleSheet.create({
     borderRadius: radius.pill,
     padding: 3,
   },
-  segment: { flexDirection: 'row', alignItems: 'center', gap: space(2), borderRadius: radius.pill, paddingHorizontal: space(4), minHeight: 34 },
-  segmentOn: { backgroundColor: colors.background, borderWidth: HAIRLINE, borderColor: colors.border },
+  segment: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space(2),
+    borderRadius: radius.pill,
+    paddingHorizontal: space(4),
+    minHeight: 34,
+  },
+  thumb: {
+    position: 'absolute',
+    top: 3,
+    bottom: 3,
+    left: 0,
+    borderRadius: radius.pill,
+    backgroundColor: colors.background,
+    borderWidth: HAIRLINE,
+    borderColor: colors.border,
+  },
   segmentText: { fontFamily: fonts.medium, fontSize: 14, color: colors.foreground },
   countChip: { backgroundColor: colors.secondary, borderRadius: radius.pill, paddingHorizontal: 7, minWidth: 22, alignItems: 'center' },
   countText: { fontFamily: fonts.medium, fontSize: 12, color: colors.foreground, fontVariant: ['tabular-nums'], lineHeight: 18 },

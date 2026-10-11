@@ -5,6 +5,7 @@ import { useSyncExternalStore } from 'react';
 
 import { ApiError, attachDocument, documentsUrl, type UploadedDocument } from './api';
 import { loadConnection } from './connection';
+import { showToast } from './toast';
 
 /**
  * The capture queue. A receipt is never lost between the camera and the
@@ -71,6 +72,24 @@ export function useCaptures(): Capture[] {
       return () => listeners.delete(l);
     },
     () => items,
+  );
+}
+
+// Upload progress lives in memory only (0..1 per capture id); a restart simply shows "Waiting".
+const progress = new Map<string, number>();
+const progressListeners = new Set<() => void>();
+function setProgress(id: string, p: number | null) {
+  if (p == null) progress.delete(id);
+  else progress.set(id, p);
+  progressListeners.forEach((l) => l());
+}
+export function useUploadProgress(id: string): number | null {
+  return useSyncExternalStore(
+    (l) => {
+      progressListeners.add(l);
+      return () => progressListeners.delete(l);
+    },
+    () => progress.get(id) ?? null,
   );
 }
 
@@ -177,7 +196,9 @@ async function work() {
           headers: { Authorization: `Bearer ${conn.apiKey}`, 'Idempotency-Key': c.id, Accept: 'application/json' },
           parameters: { upload_source: c.source },
           sessionType: 'background',
+          onProgress: ({ bytesSent, totalBytes }) => totalBytes > 0 && setProgress(c.id, Math.min(1, bytesSent / totalBytes)),
         });
+        setProgress(c.id, null);
         let body: any = null;
         try {
           body = JSON.parse(res.body);
@@ -188,6 +209,7 @@ async function work() {
         }
         const doc = body.data as UploadedDocument;
         if (doc.sha256_hash !== c.sha256) {
+          showToast('Upload failed the integrity check. Keep the paper receipt.', 'error');
           patch(c.id, {
             state: 'failed',
             documentId: doc.id,
@@ -204,9 +226,13 @@ async function work() {
         patch(c.id, { attachedAt: new Date().toISOString() });
       }
       patch(c.id, { state: 'done', error: undefined });
+      showToast(c.transaction ? `Receipt attached to ${c.transaction.label}` : 'Receipt archived');
     } catch (e) {
+      setProgress(c.id, null);
       const msg = e instanceof Error ? e.message : String(e);
-      patch(c.id, { state: retriable(e) ? 'queued' : 'failed', error: msg });
+      const failedHard = !retriable(e);
+      patch(c.id, { state: failedHard ? 'failed' : 'queued', error: msg });
+      if (failedHard) showToast('Upload failed. Keep the paper receipt.', 'error');
       if (e instanceof ApiError && e.status === 0) break; // offline: stop, retry on reconnect
     }
   }

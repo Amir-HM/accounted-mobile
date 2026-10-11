@@ -8,6 +8,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import { AppState, useColorScheme } from 'react-native';
 
+import { ToastHost } from '@/components/toast-host';
 import { useConnection } from '@/lib/connection';
 import { queryClient } from '@/lib/queries';
 import { runQueue } from '@/lib/queue';
@@ -48,7 +49,7 @@ export default function RootLayout() {
       <QueryClientProvider client={queryClient}>
         <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
           <Stack.Protected guard={!!connection}>
-            <Stack.Screen name="(tabs)" />
+            <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
             <Stack.Screen
               name="assign/[captureId]"
               options={{
@@ -64,9 +65,10 @@ export default function RootLayout() {
             />
           </Stack.Protected>
           <Stack.Protected guard={!connection}>
-            <Stack.Screen name="setup" options={{ contentStyle: { backgroundColor: colors.frame } }} />
+            <Stack.Screen name="setup" options={{ animation: 'fade', contentStyle: { backgroundColor: colors.frame } }} />
           </Stack.Protected>
         </Stack>
+        <ToastHost />
       </QueryClientProvider>
     </ThemeProvider>
   );

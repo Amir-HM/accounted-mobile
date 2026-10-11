@@ -1,25 +1,44 @@
 import { router } from 'expo-router';
-import { FileWarning, Upload } from 'lucide-react-native';
-import { RefreshControl, ScrollView, Text, View } from 'react-native';
+import { ChevronRight, FileWarning, Upload } from 'lucide-react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { Attn, Divider, Metric, Row, SectionLabel, TopBar } from '@/components/ui';
+import { MonthBars } from '@/components/month-bars';
+import { Reveal, Skeleton } from '@/components/motion';
+import { Attn, Row, SectionLabel, TopBar } from '@/components/ui';
+import type { Kpi } from '@/lib/api';
 import { useConnection } from '@/lib/connection';
-import { formatMoney, maskIban } from '@/lib/format';
+import { formatMoney, formatMoneyShort, maskIban } from '@/lib/format';
 import { lookbackLabel, useCashAccounts, useCurrentKpi, useHiddenIds, useLookbackDays, useMissingReceipts } from '@/lib/queries';
 import { pendingCount, useCaptures } from '@/lib/queue';
-import { colors, space, type } from '@/lib/theme';
+import { colors, fonts, radius, space, type, useHex } from '@/lib/theme';
 
 const STALE_HOURS = 36;
+const today = new Intl.DateTimeFormat('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
 
 function greeting(now = new Date()) {
   const h = now.getHours();
   return h < 5 ? 'Good evening.' : h < 10 ? 'Good morning.' : h < 18 ? 'Good day.' : 'Good evening.';
 }
 
-const today = new Intl.DateTimeFormat('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+/** Months of the fiscal year up to and including this one (the API returns the whole year). */
+function monthsSoFar(k: Kpi) {
+  const start = new Date(`${k.period.start}T12:00:00`);
+  const now = new Date();
+  const elapsed = (now.getFullYear() - start.getFullYear()) * 12 + now.getMonth() - start.getMonth();
+  return k.months.slice(0, Math.max(1, Math.min(k.months.length, elapsed + 1)));
+}
+
+/** "Covers roughly N days of expenses", the web KPI caption. */
+function runway(k: Kpi) {
+  const days = Math.max(1, (Date.now() - new Date(`${k.period.start}T00:00:00`).getTime()) / 86400_000);
+  const perDay = k.totalExpenses / days;
+  if (perDay <= 0 || k.cashPosition <= 0) return 'In the books, all bank accounts';
+  return `Covers roughly ${Math.round(k.cashPosition / perDay)} days of expenses`;
+}
 
 export default function Overview() {
   const conn = useConnection();
+  const hex = useHex();
   const accounts = useCashAccounts();
   const kpi = useCurrentKpi();
   const missing = useMissingReceipts();
@@ -33,7 +52,11 @@ export default function Overview() {
   const failed = captures.filter((c) => c.state === 'failed').length;
 
   const list = [...(accounts.data ?? [])].sort((a, b) => Number(!!b.balance) - Number(!!a.balance));
-  const latest = list.map((a) => a.balance_updated_at).filter(Boolean).sort().at(-1);
+  const latest = list
+    .map((a) => a.balance_updated_at)
+    .filter(Boolean)
+    .sort()
+    .at(-1);
   const staleHours = latest ? Math.round((Date.now() - new Date(latest).getTime()) / 3600_000) : 0;
 
   const refreshing = accounts.isRefetching || kpi.isRefetching || missing.isRefetching;
@@ -46,8 +69,10 @@ export default function Overview() {
       <TopBar title="Overview" />
       <ScrollView
         contentContainerStyle={{ paddingHorizontal: space(4), paddingBottom: space(12) }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}>
-        <View style={{ paddingTop: space(6), gap: space(4) }}>
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}
+      >
+        {/* Greeting */}
+        <Reveal index={0} style={{ paddingTop: space(6), gap: space(4) }}>
           {error ? (
             <Attn action="Try again" onAction={refresh}>
               {error.message}
@@ -59,59 +84,138 @@ export default function Overview() {
             <Text style={type.display}>{greeting()}</Text>
             <Text style={type.meta}>{`${today.format(new Date())} · ${conn?.companyName ?? ''}`}</Text>
           </View>
-        </View>
+        </Reveal>
 
-        <View style={{ paddingTop: space(8) }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingBottom: space(3) }}>
-            <Text style={type.title}>To do</Text>
-            <Text style={type.meta}>{missing.isPending ? '' : `${missingCount + failed} left`}</Text>
-          </View>
-          <Divider />
-          <SectionLabel right={lookbackLabel(days)}>Receipts</SectionLabel>
-          <Row
-            icon={FileWarning}
-            title="Payments missing a receipt"
-            value={missing.isPending ? '…' : String(missingCount)}
-            valueTone="muted"
-            onPress={() => router.navigate('/receipts')}
-            last={!uploading}
-          />
-          {uploading ? (
-            <Row
-              icon={Upload}
-              title={failed ? 'Uploads need attention' : 'Uploading'}
-              value={String(uploading)}
-              valueTone={failed ? 'negative' : 'muted'}
+        {/* To do */}
+        <Reveal index={1} style={{ paddingTop: space(6) }}>
+          <View style={st.card}>
+            <TodoRow
+              icon={<FileWarning size={18} strokeWidth={1.5} color={missingCount ? hex.attn : hex.mutedForeground} />}
+              title={missing.isPending || missingCount ? 'Payments missing a receipt' : 'Every payment has a receipt'}
+              meta={lookbackLabel(days)}
+              count={missing.isPending ? null : missingCount}
               onPress={() => router.navigate('/receipts')}
-              last
             />
-          ) : null}
-        </View>
+            {uploading ? (
+              <>
+                <View style={st.innerDivider} />
+                <TodoRow
+                  icon={<Upload size={18} strokeWidth={1.5} color={failed ? hex.destructive : hex.mutedForeground} />}
+                  title={failed ? 'Uploads need attention' : 'Uploading receipts'}
+                  meta={failed ? 'Keep the paper until they are archived' : 'Safe to close the app'}
+                  count={uploading}
+                  onPress={() => router.navigate('/receipts')}
+                />
+              </>
+            ) : null}
+          </View>
+        </Reveal>
 
+        {/* Money */}
         {k ? (
-          <View style={{ paddingTop: space(8), gap: space(6) }}>
-            <Divider />
-            <Metric label="Cash" value={formatMoney(k.cashPosition)} caption="In the books, all bank accounts" />
-            <Metric label="Result" value={formatMoney(k.netResult)} tone={k.netResult < 0 ? 'negative' : undefined} caption={kpi.data?.period.name} />
-            <Metric label="VAT" value={formatMoney(k.vatLiability)} caption="to pay" />
+          <>
+            <Reveal index={2} style={{ paddingTop: space(8), gap: space(2) }}>
+              <Text style={type.label}>Cash</Text>
+              <Text selectable style={[type.number, { fontSize: 44, lineHeight: 50 }]}>
+                {formatMoney(k.cashPosition)}
+              </Text>
+              <Text style={type.meta}>{runway(k)}</Text>
+            </Reveal>
+
+            <Reveal index={3} style={st.grid}>
+              <Tile
+                label="Result"
+                value={formatMoneyShort(k.netResult)}
+                tone={k.netResult < 0 ? 'negative' : undefined}
+                caption="this year"
+              />
+              <Tile label="VAT" value={formatMoneyShort(k.vatLiability)} caption="to pay" />
+              <Tile label="Revenue" value={formatMoneyShort(k.totalRevenue)} caption="this year" />
+              <Tile label="Expenses" value={formatMoneyShort(k.totalExpenses)} caption="this year" />
+            </Reveal>
+
+            <Reveal index={4} style={{ paddingTop: space(8) }}>
+              <MonthBars months={monthsSoFar(k)} />
+              <Text style={[type.meta, { paddingTop: space(3) }]}>{kpi.data?.period.name}</Text>
+            </Reveal>
+          </>
+        ) : kpi.isPending ? (
+          <View style={{ paddingTop: space(8), gap: space(3) }}>
+            <Skeleton width={60} height={11} />
+            <Skeleton width="70%" height={40} />
+            <Skeleton width="50%" height={12} />
+            <View style={[st.grid, { paddingTop: space(4) }]}>
+              {[0, 1, 2, 3].map((i) => (
+                <Skeleton key={i} height={84} style={st.tileBox} />
+              ))}
+            </View>
           </View>
         ) : null}
 
-        <View style={{ paddingTop: space(8) }}>
-          <Divider />
-          <SectionLabel right={latest ? `updated ${relativeHours(staleHours)}` : undefined}>Bank accounts</SectionLabel>
-          {list.map((a, i) => (
-            <Row
-              key={a.cash_account_id}
-              title={`${a.ledger_account} · ${a.currency}`}
-              meta={[a.name !== conn?.companyName ? a.name : null, maskIban(a.iban)].filter(Boolean).join(' · ') || undefined}
-              value={a.balance == null ? '–' : formatMoney(a.balance, a.currency)}
-              valueTone={a.balance ? 'default' : 'muted'}
-              last={i === list.length - 1}
-            />
-          ))}
-        </View>
+        {/* Bank */}
+        {list.length ? (
+          <Reveal index={5} style={{ paddingTop: space(6) }}>
+            <SectionLabel right={latest ? `updated ${relativeHours(staleHours)}` : undefined}>Bank accounts</SectionLabel>
+            {list.map((a, i) => (
+              <Row
+                key={a.cash_account_id}
+                title={`${a.ledger_account} · ${a.currency}`}
+                meta={[a.name !== conn?.companyName ? a.name : null, maskIban(a.iban)].filter(Boolean).join(' · ') || undefined}
+                value={a.balance == null ? '–' : formatMoney(a.balance, a.currency)}
+                valueTone={a.balance ? 'default' : 'muted'}
+                last={i === list.length - 1}
+              />
+            ))}
+          </Reveal>
+        ) : null}
       </ScrollView>
+    </View>
+  );
+}
+
+function TodoRow({
+  icon,
+  title,
+  meta,
+  count,
+  onPress,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  meta: string;
+  count: number | null;
+  onPress: () => void;
+}) {
+  const hex = useHex();
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [st.todo, pressed && { backgroundColor: colors.muted }]}>
+      {icon}
+      <View style={{ flex: 1, gap: 2 }}>
+        <Text style={type.body} numberOfLines={1}>
+          {title}
+        </Text>
+        <Text style={type.meta}>{meta}</Text>
+      </View>
+      {count == null ? (
+        <Skeleton width={28} height={20} />
+      ) : count > 0 ? (
+        <View style={st.count}>
+          <Text style={st.countText}>{count}</Text>
+        </View>
+      ) : null}
+      <ChevronRight size={16} strokeWidth={1.5} color={hex.mutedForeground} />
+    </Pressable>
+  );
+}
+
+function Tile({ label, value, caption, tone }: { label: string; value: string; caption?: string; tone?: 'negative' }) {
+  return (
+    <View style={[st.tileBox, st.tile]}>
+      <Text style={type.label}>{label}</Text>
+      <Text selectable style={[st.tileValue, tone === 'negative' && { color: colors.destructive }]} numberOfLines={1} adjustsFontSizeToFit>
+        {value}
+      </Text>
+      {caption ? <Text style={type.meta}>{caption}</Text> : null}
     </View>
   );
 }
@@ -121,3 +225,30 @@ function relativeHours(h: number) {
   if (h < 48) return `${h} h ago`;
   return `${Math.round(h / 24)} days ago`;
 }
+
+const st = StyleSheet.create({
+  card: { borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, borderRadius: radius.surface, overflow: 'hidden' },
+  todo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space(3),
+    paddingHorizontal: space(4),
+    paddingVertical: space(3),
+    minHeight: 60,
+  },
+  innerDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginLeft: space(12) },
+  count: {
+    backgroundColor: colors.foreground,
+    borderRadius: radius.pill,
+    minWidth: 24,
+    height: 22,
+    paddingHorizontal: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  countText: { fontFamily: fonts.medium, fontSize: 12, color: colors.onPrimary, fontVariant: ['tabular-nums'] },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: space(3), paddingTop: space(6) },
+  tileBox: { flexBasis: '47%', flexGrow: 1, borderRadius: radius.surface },
+  tile: { borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, padding: space(4), gap: space(1) },
+  tileValue: { fontFamily: fonts.display, fontSize: 24, lineHeight: 30, color: colors.foreground, fontVariant: ['tabular-nums'] },
+});

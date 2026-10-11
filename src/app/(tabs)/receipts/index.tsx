@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { ActionSheetIOS, Alert, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 
 import { CaptureRow } from '@/components/capture-row';
+import { Skeleton } from '@/components/motion';
 import { Attn, Button, EmptyState, SectionLabel, Segmented, TopBar } from '@/components/ui';
 import type { Transaction } from '@/lib/api';
 import { captureAndQueue, type CaptureMethod } from '@/lib/capture';
@@ -31,9 +32,8 @@ export async function captureUnlinked(method: CaptureMethod) {
 }
 
 function addMenu() {
-  ActionSheetIOS.showActionSheetWithOptions(
-    { options: ['Choose photo', 'Choose file', 'Cancel'], cancelButtonIndex: 2 },
-    (i) => (i === 0 ? captureUnlinked('photo') : i === 1 ? captureUnlinked('file') : undefined),
+  ActionSheetIOS.showActionSheetWithOptions({ options: ['Choose photo', 'Choose file', 'Cancel'], cancelButtonIndex: 2 }, (i) =>
+    i === 0 ? captureUnlinked('photo') : i === 1 ? captureUnlinked('file') : undefined,
   );
 }
 
@@ -141,7 +141,8 @@ function ItemView({ item, view }: { item: Item; view: 'missing' | 'attached' }) 
       return (
         <Pressable
           onPress={() => router.push({ pathname: '/receipts/[id]', params: { id: item.tx.id } })}
-          style={({ pressed }) => [st.tx, !item.last && st.divider, pressed && { backgroundColor: colors.muted }]}>
+          style={({ pressed }) => [st.tx, !item.last && st.divider, pressed && { backgroundColor: colors.muted }]}
+        >
           <Text style={st.date}>{isoDay(item.tx.date)}</Text>
           <Text style={[type.body, { flex: 1 }]} numberOfLines={1}>
             {tidyMerchant(item.tx.merchant_name ?? item.tx.description)}
@@ -151,15 +152,24 @@ function ItemView({ item, view }: { item: Item; view: 'missing' | 'attached' }) 
       );
     case 'loading':
       return (
-        <View style={{ paddingTop: space(3), gap: space(4) }}>
-          {[0, 1, 2, 3, 4].map((i) => (
-            <View key={i} style={{ height: 14, borderRadius: 4, backgroundColor: colors.muted, width: `${90 - i * 8}%` }} />
+        <View style={{ paddingTop: space(2) }}>
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <View key={i} style={[st.tx, st.divider]}>
+              <Skeleton width={84} height={12} />
+              <Skeleton width={`${50 - i * 4}%`} height={14} style={{ flex: 0 }} />
+              <View style={{ flex: 1 }} />
+              <Skeleton width={70} height={14} />
+            </View>
           ))}
         </View>
       );
     case 'empty':
       return view === 'missing' ? (
-        <EmptyState icon={CircleCheck} title="All caught up" message="Every payment in this period has a receipt. New card payments show up here after the next bank sync." />
+        <EmptyState
+          icon={CircleCheck}
+          title="All caught up"
+          message="Every payment in this period has a receipt. New card payments show up here after the next bank sync."
+        />
       ) : (
         <EmptyState icon={CircleCheck} title="Nothing yet" message="Receipts you attach from this iPhone show up here for 30 days." />
       );
