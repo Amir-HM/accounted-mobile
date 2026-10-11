@@ -28,7 +28,8 @@ function chooseCompany(companies: Company[]): Promise<Company | null> {
 export default function Setup() {
   const hex = useHex();
   const server = useRef(DEFAULT_SERVER);
-  const key = useRef('');
+  // Development only: a key passed to the dev server's environment, so the simulator can connect without typing.
+  const key = useRef(__DEV__ ? (process.env.EXPO_PUBLIC_DEV_API_KEY ?? '') : '');
   const [useKey, setUseKey] = useState(false);
   const [busy, setBusy] = useState<'signin' | 'key' | null>(null);
   const [error, setError] = useState<string | null>(null);

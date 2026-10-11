@@ -92,6 +92,7 @@ export default function Receipts() {
               <Attn>{`${failed} upload${failed === 1 ? '' : 's'} failed. Keep the paper and tap the row to retry.`}</Attn>
             ) : null}
             <Segmented
+              fill
               value={view}
               onChange={setView}
               options={[

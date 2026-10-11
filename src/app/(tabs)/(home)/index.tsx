@@ -24,6 +24,11 @@ function greeting(now = new Date()) {
   return h < 5 ? 'Good evening.' : h < 10 ? 'Good morning.' : h < 18 ? 'Good day.' : 'Good evening.';
 }
 
+/** "2025/2026", or "2026" when the fiscal year is the calendar year: the web's year label. */
+function fiscalYearLabel(start: string, end: string) {
+  return start.slice(0, 4) === end.slice(0, 4) ? start.slice(0, 4) : `${start.slice(0, 4)}/${end.slice(0, 4)}`;
+}
+
 /** Months of the fiscal year up to and including this one (the API returns the whole year). */
 function monthsSoFar(k: Kpi) {
   const start = new Date(`${k.period.start}T12:00:00`);
@@ -72,6 +77,7 @@ export default function Overview() {
   const refresh = () => Promise.all([accounts.refetch(), kpi.refetch(), missing.refetch()]);
   const error = accounts.error ?? kpi.error ?? missing.error;
   const k = kpi.data?.kpi;
+  const fy = kpi.data ? fiscalYearLabel(kpi.data.period.period_start, kpi.data.period.period_end) : '';
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: insets.top }}>
@@ -80,7 +86,7 @@ export default function Overview() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}
       >
         {/* Greeting, with Scan on the same line: no top bar, so more fits above the fold */}
-        <Reveal index={0} style={{ paddingTop: space(4), gap: space(4) }}>
+        <Reveal index={0} style={{ paddingTop: space(8), gap: space(4) }}>
           <View style={{ gap: space(2) }}>
             <View style={st.greetingRow}>
               <Text style={[type.display, { flex: 1 }]} numberOfLines={1} adjustsFontSizeToFit>
@@ -164,16 +170,15 @@ export default function Overview() {
                 label="Result"
                 value={formatMoneyShort(k.netResult)}
                 tone={k.netResult < 0 ? 'negative' : undefined}
-                caption="this year"
+                caption={`${fy} so far`}
               />
               <Tile label="VAT" value={formatMoneyShort(k.vatLiability)} caption="to pay" />
-              <Tile label="Revenue" value={formatMoneyShort(k.totalRevenue)} caption="this year" />
-              <Tile label="Expenses" value={formatMoneyShort(k.totalExpenses)} caption="this year" />
+              <Tile label="Revenue" value={formatMoneyShort(k.totalRevenue)} caption={`${fy} so far`} />
+              <Tile label="Expenses" value={formatMoneyShort(k.totalExpenses)} caption={`${fy} so far`} />
             </Reveal>
 
             <Reveal index={4} style={{ paddingTop: space(8) }}>
-              <MonthBars months={monthsSoFar(k)} />
-              <Text style={[type.meta, { paddingTop: space(3) }]}>{kpi.data?.period.name}</Text>
+              <MonthBars months={monthsSoFar(k)} start={k.period.start} yearLabel={fy} />
             </Reveal>
           </>
         ) : kpi.isPending ? (
@@ -265,7 +270,7 @@ function relativeHours(h: number) {
 }
 
 const st = StyleSheet.create({
-  card: { borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, borderRadius: radius.surface, overflow: 'hidden' },
+  card: { borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, borderRadius: radius.panel, overflow: 'hidden' },
   todo: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -287,7 +292,7 @@ const st = StyleSheet.create({
   countText: { fontFamily: fonts.medium, fontSize: 12, color: colors.onPrimary, fontVariant: ['tabular-nums'] },
   greetingRow: { flexDirection: 'row', alignItems: 'center', gap: space(3) },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: space(3), paddingTop: space(6) },
-  tileBox: { flexBasis: '47%', flexGrow: 1, borderRadius: radius.surface },
+  tileBox: { flexBasis: '47%', flexGrow: 1, borderRadius: radius.panel },
   tile: { borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, padding: space(4), gap: space(1) },
   tileValue: { fontFamily: fonts.display, fontSize: 24, lineHeight: 30, color: colors.foreground, fontVariant: ['tabular-nums'] },
 });

@@ -168,10 +168,13 @@ export function Segmented<K extends string>({
   options,
   value,
   onChange,
+  fill,
 }: {
   options: { key: K; label: string; count?: number }[];
   value: K;
   onChange: (k: K) => void;
+  /** Full width, segments sharing it equally. */
+  fill?: boolean;
 }) {
   const [frames, setFrames] = useState<Record<string, { x: number; width: number }>>({});
   const x = useSharedValue(0);
@@ -186,8 +189,8 @@ export function Segmented<K extends string>({
   const thumb = useAnimatedStyle(() => ({ transform: [{ translateX: x.get() }], width: w.get(), opacity: w.get() ? 1 : 0 }));
 
   return (
-    <View style={s.segmented}>
-      <Animated.View style={[s.thumb, thumb]} />
+    <View style={[s.segmented, fill && s.segmentedFill]}>
+      <Animated.View style={[s.thumb, fill && s.thumbFill, thumb]} />
       {options.map((o) => {
         const on = o.key === value;
         return (
@@ -203,7 +206,7 @@ export function Segmented<K extends string>({
               if (!on) Haptics.selectionAsync();
               onChange(o.key);
             }}
-            style={s.segment}
+            style={[s.segment, fill && s.segmentFill]}
           >
             <Text style={[s.segmentText, !on && { color: colors.mutedForeground }]}>{o.label}</Text>
             {o.count != null ? (
@@ -301,6 +304,10 @@ export const s = StyleSheet.create({
     paddingHorizontal: space(4),
     minHeight: 34,
   },
+  // Full width reads as a control, not a chip: rounded rectangle, the thumb's radius nested inside it.
+  segmentedFill: { alignSelf: 'stretch', borderRadius: radius.panel },
+  segmentFill: { flex: 1, justifyContent: 'center', borderRadius: radius.panel - 3 },
+  thumbFill: { borderRadius: radius.panel - 3 },
   thumb: {
     position: 'absolute',
     top: 3,
