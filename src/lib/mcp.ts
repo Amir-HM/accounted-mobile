@@ -101,3 +101,20 @@ export const approvePending = (c: Connection, id: string, confirmed: boolean) =>
 
 export const rejectPending = (c: Connection, id: string) =>
   callTool<{ status: string }>(c, 'gnubok_reject_pending_operation', { operation_id: id });
+
+// ---- Expense claims (utlägg): staged, so the verifikat is only posted on approval ----
+
+export type ExpenseClaimArgs = {
+  description: string;
+  expense_date: string;
+  amount: number;
+  vat_amount: number;
+  currency: string;
+  expense_account: string;
+  claimant_name: string;
+  document_id?: string;
+  inbox_item_id?: string;
+};
+
+export const stageExpenseClaim = (c: Connection, args: ExpenseClaimArgs) =>
+  callTool<{ operation_id?: string; status?: string }>(c, 'gnubok_create_expense_claim', args);

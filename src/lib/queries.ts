@@ -11,7 +11,9 @@ import {
   listBankConnections,
   listCashAccounts,
   listFiscalPeriods,
+  listCostAccounts,
   listInvoices,
+  listSupplierInvoicesToApprove,
   listLinkedEntryIds,
   listTransactionsSince,
   listVatFilings,
@@ -219,5 +221,25 @@ export function useVatNow() {
       return { declaration, filings };
     },
     enabled: !!c,
+  });
+}
+
+export function useSupplierInvoicesToApprove() {
+  const c = useConnection();
+  return useQuery({
+    queryKey: ['si-to-approve', c?.serverUrl, c?.companyId],
+    queryFn: () => listSupplierInvoicesToApprove(c!),
+    enabled: !!c,
+    retry: (n, e) => !(e instanceof ApiError && e.code === 'INSUFFICIENT_SCOPE') && n < 2,
+  });
+}
+
+export function useCostAccounts() {
+  const c = useConnection();
+  return useQuery({
+    queryKey: ['cost-accounts', c?.serverUrl, c?.companyId],
+    queryFn: () => listCostAccounts(c!),
+    enabled: !!c,
+    staleTime: 3600_000,
   });
 }

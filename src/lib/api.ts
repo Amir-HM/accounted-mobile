@@ -305,3 +305,48 @@ export const getVatDeclaration = (c: Connection, type: VatPeriodType, year: numb
 
 export const listVatFilings = (c: Connection) =>
   request<VatFiling[]>(c, `/companies/${c.companyId}/reports/vat-declaration/filings`).then((r) => r.data);
+
+// ---- Supplier invoices: approve (attest) only; nothing is posted ----
+
+export type SupplierInvoice = {
+  id: string;
+  supplier_name: string;
+  arrival_number: number;
+  supplier_invoice_number: string;
+  invoice_date: string;
+  due_date: string;
+  status: 'registered' | 'approved' | 'paid' | 'partially_paid' | 'overdue' | 'disputed' | 'credited' | 'reversed';
+  currency: string;
+  total: number;
+  remaining_amount: number;
+  is_credit_note: boolean;
+};
+
+/** Registered and overdue invoices: the ones an approval can still apply to. */
+export async function listSupplierInvoicesToApprove(c: Connection): Promise<SupplierInvoice[]> {
+  const [registered, overdue] = await Promise.all(
+    (['registered', 'overdue'] as const).map((status) =>
+      request<SupplierInvoice[]>(c, `/companies/${c.companyId}/supplier-invoices?status=${status}&limit=100`).then((r) => r.data),
+    ),
+  );
+  return [...registered, ...overdue].filter((i) => !i.is_credit_note);
+}
+
+export const approveSupplierInvoice = (c: Connection, id: string) =>
+  request<{ id: string; status: string }>(c, `/companies/${c.companyId}/supplier-invoices/${id}/approve`, {
+    method: 'POST',
+    body: '{}',
+    idempotencyKey: `si-approve-${id}`,
+  }).then((r) => r.data);
+
+// ---- Chart of accounts: cost accounts for an expense claim ----
+
+export async function listCostAccounts(c: Connection): Promise<{ number: string; name: string }[]> {
+  const r = await request<{ accounts: { account_number: string; account_name: string; is_active?: boolean }[] }>(
+    c,
+    `/companies/${c.companyId}/accounts?limit=2000`,
+  );
+  return r.data.accounts
+    .filter((a) => /^[4-8]/.test(String(a.account_number)) && a.is_active !== false)
+    .map((a) => ({ number: String(a.account_number), name: a.account_name }));
+}

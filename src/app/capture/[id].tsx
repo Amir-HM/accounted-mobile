@@ -161,6 +161,12 @@ export default function CaptureScreen() {
                 onPress={() => router.push({ pathname: '/assign/[captureId]', params: { captureId: c.id } })}
                 disabled={c.state !== 'done'}
               />
+              <Button
+                title="I paid this privately"
+                variant="link"
+                onPress={() => router.push({ pathname: '/expense/[captureId]', params: { captureId: c.id } })}
+                disabled={c.state !== 'done' || !c.documentId}
+              />
             </View>
           )}
         </Reveal>

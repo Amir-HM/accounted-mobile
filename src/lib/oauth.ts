@@ -22,6 +22,8 @@ export const APP_SCOPES = [
   'transactions:write',
   'reports:read',
   'invoices:read',
+  'suppliers:read',
+  'suppliers:write',
   'bookkeeping:write',
   'pending_operations:read',
   'pending_operations:approve',

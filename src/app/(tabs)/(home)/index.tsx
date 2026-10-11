@@ -14,7 +14,7 @@ import { ApiError, type Kpi } from '@/lib/api';
 import { useConnection } from '@/lib/connection';
 import { formatMoney, formatMoneyShort, maskIban } from '@/lib/format';
 import { usePref } from '@/lib/prefs';
-import { bankNeedsAttention, isOverdue, useBankConnections, useCashAccounts, useInvoices, useCurrentKpi, useHiddenIds, useMissingReceipts, usePendingOps, useToBook } from '@/lib/queries';
+import { bankNeedsAttention, isOverdue, useBankConnections, useCashAccounts, useInvoices, useSupplierInvoicesToApprove, useCurrentKpi, useHiddenIds, useMissingReceipts, usePendingOps, useToBook } from '@/lib/queries';
 import { pendingCount, useCaptures } from '@/lib/queue';
 import { colors, fonts, radius, space, type, useHex } from '@/lib/theme';
 
@@ -59,7 +59,8 @@ export default function Overview() {
   const bookOn = usePref('bookInAccounted');
   const toBook = useToBook();
   const pending = usePendingOps();
-  const approvals = pending.data?.length ?? 0;
+  const supplierApprovals = useSupplierInvoicesToApprove();
+  const approvals = (pending.data?.length ?? 0) + (supplierApprovals.data?.length ?? 0);
   const banks = useBankConnections();
   const matches = useReceiptMatches();
   const invoices = useInvoices();

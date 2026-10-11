@@ -152,6 +152,7 @@ export default function RootLayout() {
             <Stack.Screen name="banks" />
             <Stack.Screen name="invoices" />
             <Stack.Screen name="vat" />
+            <Stack.Screen name="expense/[captureId]" />
             <Stack.Screen name="viewer/[id]" options={{ presentation: 'fullScreenModal', animation: 'fade' }} />
             <Stack.Screen
               name="add"
