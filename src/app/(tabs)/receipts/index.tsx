@@ -1,8 +1,8 @@
-import { FlashList } from '@shopify/flash-list';
+import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { CircleCheck, Plus, ScanLine } from 'lucide-react-native';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActionSheetIOS, Alert, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 
 import { CaptureRow } from '@/components/capture-row';
@@ -23,17 +23,24 @@ type Item =
   | { kind: 'empty'; key: string }
   | { kind: 'loading'; key: string };
 
-function addMenu() {
-  ActionSheetIOS.showActionSheetWithOptions({ options: ['Choose photo', 'Choose file', 'Cancel'], cancelButtonIndex: 2 }, (i) =>
-    i === 0 ? captureUnlinked('photo') : i === 1 ? captureUnlinked('file') : undefined,
-  );
-}
 
 export default function Receipts() {
   const missing = useMissingReceipts();
   const hidden = useHiddenIds();
   const captures = useCaptures();
   const [view, setView] = useState<'missing' | 'attached'>('missing');
+  const list = useRef<FlashListRef<Item>>(null);
+
+  // A new capture lands at the top: bring it into view instead of letting the list hold its position.
+  const count = captures.length;
+  const prevCount = useRef(count);
+  useEffect(() => {
+    if (count > prevCount.current) {
+      setView('missing');
+      list.current?.scrollToOffset({ offset: 0, animated: true });
+    }
+    prevCount.current = count;
+  }, [count]);
 
   const inFlight = new Set(captures.filter((c) => c.transaction && c.state !== 'failed').map((c) => c.transaction!.id));
   const todo = (missing.data ?? []).filter((t) => !hidden.includes(t.id) && !inFlight.has(t.id));
@@ -63,12 +70,13 @@ export default function Receipts() {
         title="Receipts"
         right={
           <>
-            <Button size="sm" variant="outline" icon={Plus} onPress={addMenu} />
+            <Button size="sm" variant="outline" icon={Plus} onPress={() => router.push('/add')} />
             <Button size="sm" icon={ScanLine} title="Scan" onPress={() => captureUnlinked('scan')} />
           </>
         }
       />
       <FlashList
+        ref={list}
         data={items}
         keyExtractor={(i) => i.key}
         getItemType={(i) => i.kind}

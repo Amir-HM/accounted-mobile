@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import { router, useLocalSearchParams } from 'expo-router';
-import { FolderOpen, Image as ImageIcon, ScanLine } from 'lucide-react-native';
+import { Image as ImageIcon, ScanLine } from 'lucide-react-native';
 import { useState } from 'react';
 import { Alert, ScrollView, Text, View } from 'react-native';
 
@@ -91,26 +91,18 @@ export default function PaymentScreen() {
 
           <Reveal index={2} style={{ paddingTop: space(8), gap: space(3) }}>
             <Button title="Scan receipt" icon={ScanLine} onPress={() => capture('scan')} busy={busy === 'scan'} disabled={!!busy} />
-            <View style={{ flexDirection: 'row', gap: space(3) }}>
-              <Button
-                title="Photo"
-                icon={ImageIcon}
-                variant="outline"
-                style={{ flex: 1 }}
-                onPress={() => capture('photo')}
-                busy={busy === 'photo'}
-                disabled={!!busy}
-              />
-              <Button
-                title="File"
-                icon={FolderOpen}
-                variant="outline"
-                style={{ flex: 1 }}
-                onPress={() => capture('file')}
-                busy={busy === 'file'}
-                disabled={!!busy}
-              />
-            </View>
+            <Button
+              title="Photo or file"
+              icon={ImageIcon}
+              variant="outline"
+              disabled={!!busy}
+              onPress={() =>
+                router.push({
+                  pathname: '/add',
+                  params: { txId: t.id, label: name, amount: String(t.amount), currency: t.currency, date: t.date },
+                })
+              }
+            />
             <Text style={[type.meta, { lineHeight: 18, paddingTop: space(1) }]}>
               {t.journal_entry_id
                 ? 'Already booked: the receipt becomes the voucher’s underlag and cannot be changed afterwards.'

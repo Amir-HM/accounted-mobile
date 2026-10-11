@@ -4,6 +4,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { useFonts } from 'expo-font';
 import { addNetworkStateListener } from 'expo-network';
 import { DarkTheme, DefaultTheme, router, Stack, ThemeProvider } from 'expo-router';
+import { requireOptionalNativeModule } from 'expo';
 import * as Notifications from 'expo-notifications';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useRef } from 'react';
@@ -77,6 +78,23 @@ function usePrimeNotifications(enabled: boolean) {
   }, [captures, enabled, push]);
 }
 
+/**
+ * Home Screen quick action "Scan receipt" (long-press the app icon). Needs
+ * the native module, so it only exists in real builds; Expo Go skips it.
+ */
+function useQuickActions(enabled: boolean) {
+  useEffect(() => {
+    if (!enabled || !requireOptionalNativeModule('ExpoQuickActions')) return;
+    let sub: { remove(): void } | undefined;
+    import('expo-quick-actions').then((QA) => {
+      QA.setItems([{ id: 'scan', title: 'Scan receipt', icon: 'symbol:doc.viewfinder' }]);
+      if (QA.initial?.id === 'scan') setTimeout(() => captureUnlinked('scan'), 400);
+      sub = QA.addListener((a) => a.id === 'scan' && captureUnlinked('scan'));
+    });
+    return () => sub?.remove();
+  }, [enabled]);
+}
+
 export default function RootLayout() {
   const scheme = useColorScheme();
   const connection = useConnection();
@@ -84,6 +102,7 @@ export default function RootLayout() {
   useQueueWorker(!!connection);
   useNotificationRouting(!!connection && !!fontsLoaded);
   usePrimeNotifications(!!connection && !!fontsLoaded);
+  useQuickActions(!!connection && !!fontsLoaded);
 
   // "Open on the scanner": the camera first, once per cold start.
   const scannedOnLaunch = useRef(false);
@@ -110,6 +129,10 @@ export default function RootLayout() {
             <Stack.Screen name="account/[id]" />
             <Stack.Screen name="capture/[id]" />
             <Stack.Screen name="viewer/[id]" options={{ presentation: 'fullScreenModal', animation: 'fade' }} />
+            <Stack.Screen
+              name="add"
+              options={{ presentation: 'formSheet', sheetAllowedDetents: [0.72, 1], sheetGrabberVisible: true, sheetCornerRadius: 12 }}
+            />
             <Stack.Screen
               name="prime"
               options={{ presentation: 'formSheet', sheetAllowedDetents: [0.62], sheetGrabberVisible: true, sheetCornerRadius: 12 }}

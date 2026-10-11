@@ -65,6 +65,14 @@
         {
           "faceIDPermission": "Accounted uses Face ID to keep your books private."
         }
+      ],
+      "expo-quick-actions",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Accounted shows your latest photos and screenshots so you can add a receipt in one tap.",
+          "savePhotosPermission": false
+        }
       ]
     ],
     "experiments": {
