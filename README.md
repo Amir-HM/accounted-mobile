@@ -60,8 +60,8 @@ Both Workers are a few dozen lines of code each and run on the free Cloudflare W
 ## Upstream wishes
 
 Two small changes in Accounted would make the Workers unnecessary for everyone:
-1. Accept a native app redirect (`accounted://oauth/callback`, PKCE-bound like the existing Cursor deeplink) in the OAuth allowlist.
-2. Publish a `transaction.synced` (new bank transaction) webhook event, so push can be event-driven instead of polled.
+1. Accept a native app redirect (`accounted://oauth/callback`, PKCE-bound like the existing Cursor deeplink) in the OAuth allowlist ([erp-mafia/accounted#3497](https://github.com/erp-mafia/accounted/issues/3497)).
+2. Publish a `transaction.synced` (new bank transaction) webhook event, so push can be event-driven instead of polled ([erp-mafia/accounted#3498](https://github.com/erp-mafia/accounted/issues/3498)).
 
 ## Develop
 
