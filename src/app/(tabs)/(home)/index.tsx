@@ -1,10 +1,11 @@
 import { router } from 'expo-router';
 import { ArrowLeftRight, Bot, ChevronRight, FileWarning, ScanLine, Upload } from 'lucide-react-native';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { MonthBars } from '@/components/month-bars';
 import { Reveal, Skeleton } from '@/components/motion';
-import { Attn, Button, Row, SectionLabel, TopBar } from '@/components/ui';
+import { Attn, Button, Row, SectionLabel } from '@/components/ui';
 import { captureUnlinked } from '@/lib/capture';
 import { useNamedAccounts } from '@/lib/accounts';
 import type { Kpi } from '@/lib/api';
@@ -42,6 +43,7 @@ function runway(k: Kpi) {
 export default function Overview() {
   const conn = useConnection();
   const hex = useHex();
+  const insets = useSafeAreaInsets();
   const accounts = useCashAccounts();
   const kpi = useCurrentKpi();
   const missing = useMissingReceipts();
@@ -72,14 +74,22 @@ export default function Overview() {
   const k = kpi.data?.kpi;
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <TopBar title="Overview" right={<Button size="sm" icon={ScanLine} title="Scan" onPress={() => captureUnlinked('scan')} />} />
+    <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: insets.top }}>
       <ScrollView
         contentContainerStyle={{ paddingHorizontal: space(4), paddingBottom: space(12) }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}
       >
-        {/* Greeting */}
-        <Reveal index={0} style={{ paddingTop: space(6), gap: space(4) }}>
+        {/* Greeting, with Scan on the same line: no top bar, so more fits above the fold */}
+        <Reveal index={0} style={{ paddingTop: space(4), gap: space(4) }}>
+          <View style={{ gap: space(2) }}>
+            <View style={st.greetingRow}>
+              <Text style={[type.display, { flex: 1 }]} numberOfLines={1} adjustsFontSizeToFit>
+                {greeting()}
+              </Text>
+              <Button size="sm" icon={ScanLine} title="Scan" onPress={() => captureUnlinked('scan')} />
+            </View>
+            <Text style={type.meta}>{`${today.format(new Date())} · ${conn?.companyName ?? ''}`}</Text>
+          </View>
           {error ? (
             <Attn action="Try again" onAction={refresh}>
               {error.message}
@@ -87,10 +97,6 @@ export default function Overview() {
           ) : staleHours >= STALE_HOURS ? (
             <Attn>{`The bank has not synced for ${Math.round(staleHours / 24)} days. Renew the bank connection in Accounted on the web.`}</Attn>
           ) : null}
-          <View style={{ gap: space(2) }}>
-            <Text style={type.display}>{greeting()}</Text>
-            <Text style={type.meta}>{`${today.format(new Date())} · ${conn?.companyName ?? ''}`}</Text>
-          </View>
         </Reveal>
 
         {/* To do */}
@@ -279,6 +285,7 @@ const st = StyleSheet.create({
     justifyContent: 'center',
   },
   countText: { fontFamily: fonts.medium, fontSize: 12, color: colors.onPrimary, fontVariant: ['tabular-nums'] },
+  greetingRow: { flexDirection: 'row', alignItems: 'center', gap: space(3) },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: space(3), paddingTop: space(6) },
   tileBox: { flexBasis: '47%', flexGrow: 1, borderRadius: radius.surface },
   tile: { borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, padding: space(4), gap: space(1) },
