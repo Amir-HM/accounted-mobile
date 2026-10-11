@@ -140,7 +140,7 @@ function ItemView({ item, view }: { item: Item; view: 'missing' | 'attached' }) 
     case 'tx':
       return (
         <Pressable
-          onPress={() => router.push({ pathname: '/receipts/[id]', params: { id: item.tx.id } })}
+          onPress={() => router.push({ pathname: '/payment/[id]', params: { id: item.tx.id } })}
           style={({ pressed }) => [st.tx, !item.last && st.divider, pressed && { backgroundColor: colors.muted }]}
         >
           <Text style={st.date}>{isoDay(item.tx.date)}</Text>

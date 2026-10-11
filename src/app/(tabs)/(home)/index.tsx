@@ -5,6 +5,7 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'r
 import { MonthBars } from '@/components/month-bars';
 import { Reveal, Skeleton } from '@/components/motion';
 import { Attn, Row, SectionLabel, TopBar } from '@/components/ui';
+import { useNamedAccounts } from '@/lib/accounts';
 import type { Kpi } from '@/lib/api';
 import { useConnection } from '@/lib/connection';
 import { formatMoney, formatMoneyShort, maskIban } from '@/lib/format';
@@ -51,7 +52,7 @@ export default function Overview() {
   const uploading = pendingCount(captures);
   const failed = captures.filter((c) => c.state === 'failed').length;
 
-  const list = [...(accounts.data ?? [])].sort((a, b) => Number(!!b.balance) - Number(!!a.balance));
+  const list = useNamedAccounts(accounts.data);
   const latest = list
     .map((a) => a.balance_updated_at)
     .filter(Boolean)
@@ -159,10 +160,11 @@ export default function Overview() {
             {list.map((a, i) => (
               <Row
                 key={a.cash_account_id}
-                title={`${a.ledger_account} · ${a.currency}`}
-                meta={[a.name !== conn?.companyName ? a.name : null, maskIban(a.iban)].filter(Boolean).join(' · ') || undefined}
+                title={a.title}
+                meta={[a.bank, a.ledger_account, maskIban(a.iban)?.slice(-4)].filter(Boolean).join(' · ')}
                 value={a.balance == null ? '–' : formatMoney(a.balance, a.currency)}
                 valueTone={a.balance ? 'default' : 'muted'}
+                onPress={() => router.push({ pathname: '/account/[id]', params: { id: a.cash_account_id } })}
                 last={i === list.length - 1}
               />
             ))}

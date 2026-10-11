@@ -50,6 +50,8 @@ export default function RootLayout() {
         <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
           <Stack.Protected guard={!!connection}>
             <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
+            <Stack.Screen name="payment/[id]" />
+            <Stack.Screen name="account/[id]" />
             <Stack.Screen
               name="assign/[captureId]"
               options={{

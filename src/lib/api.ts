@@ -129,11 +129,11 @@ export const listFiscalPeriods = (c: Connection) =>
 export const getKpi = (c: Connection, periodId: string) =>
   request<Kpi>(c, `/companies/${c.companyId}/reports/kpi?period_id=${periodId}`).then((r) => r.data);
 
-export async function listTransactionsSince(c: Connection, dateFrom: string): Promise<TransactionRow[]> {
+export async function listTransactionsSince(c: Connection, dateFrom: string, cashAccountId?: string): Promise<TransactionRow[]> {
   const out: TransactionRow[] = [];
   let cursor: string | null | undefined;
   for (let page = 0; page < 10; page++) {
-    const q = `limit=100&date_from=${dateFrom}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`;
+    const q = `limit=100&date_from=${dateFrom}${cashAccountId ? `&cash_account_id=${cashAccountId}` : ''}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`;
     const r = await request<TransactionRow[]>(c, `/companies/${c.companyId}/transactions?${q}`);
     out.push(...r.data);
     cursor = r.meta?.next_cursor;

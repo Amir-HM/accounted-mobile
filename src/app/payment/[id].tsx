@@ -7,6 +7,7 @@ import { Alert, ScrollView, Text, View } from 'react-native';
 
 import { Reveal } from '@/components/motion';
 import { Attn, Button, Divider, Row, TopBar } from '@/components/ui';
+import { nameAccount, useLedgerNames, useNicknames } from '@/lib/accounts';
 import { getTransaction, type Transaction } from '@/lib/api';
 import { captureAndQueue, type CaptureMethod } from '@/lib/capture';
 import { useConnection } from '@/lib/connection';
@@ -28,7 +29,10 @@ export default function PaymentScreen() {
   const tx = useQuery({ queryKey: ['tx', id], queryFn: () => getTransaction(conn!, id), initialData: cached, enabled: !!conn });
   const t = tx.data;
 
-  const account = accounts.data?.find((a) => a.cash_account_id === t?.cash_account_id);
+  const ledger = useLedgerNames();
+  const nicks = useNicknames();
+  const raw = accounts.data?.find((a) => a.cash_account_id === t?.cash_account_id);
+  const account = raw ? nameAccount(raw, ledger.data, nicks) : undefined;
   const name = tidyMerchant(t?.merchant_name ?? t?.description);
 
   async function capture(method: CaptureMethod) {
@@ -91,7 +95,8 @@ export default function PaymentScreen() {
           <Reveal index={1}>
             <Divider />
             <Row title="Date" value={t.date.slice(0, 10)} valueTone="muted" />
-            <Row title="Account" value={account ? `${account.ledger_account} · ${account.currency}` : '–'} valueTone="muted" />
+            <Row title="Account" value={account ? account.title : '–'}
+            onPress={account ? () => router.push({ pathname: '/account/[id]', params: { id: account.cash_account_id } }) : undefined} valueTone="muted" />
             <Row title="In the books" value={t.journal_entry_id ? 'Booked' : 'Not booked yet'} valueTone="muted" last />
             <Divider />
           </Reveal>
