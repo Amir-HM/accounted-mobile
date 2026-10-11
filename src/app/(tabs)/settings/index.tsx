@@ -1,19 +1,36 @@
 import Constants from 'expo-constants';
 import * as WebBrowser from 'expo-web-browser';
-import { ActionSheetIOS, Alert, ScrollView, Text, View } from 'react-native';
+import { useState } from 'react';
+import { ActionSheetIOS, ActivityIndicator, Alert, ScrollView, Switch, Text, View } from 'react-native';
 
 import { Row, SectionLabel, TopBar } from '@/components/ui';
 import { clearConnection, useConnection } from '@/lib/connection';
 import { LOOKBACK_OPTIONS, lookbackLabel, queryClient, setLookbackDays, useLookbackDays } from '@/lib/queries';
+import { disablePush, enablePush, usePushEnabled } from '@/lib/push';
 import { pendingCount, useCaptures } from '@/lib/queue';
-import { colors, space, type } from '@/lib/theme';
+import { colors, space, type, useHex } from '@/lib/theme';
 
 /** Settings speak "Fönster": flat hairline rows, uppercase section labels, no cards. */
 export default function Settings() {
   const conn = useConnection();
   const captures = useCaptures();
   const days = useLookbackDays();
+  const push = usePushEnabled();
+  const hex = useHex();
+  const [pushBusy, setPushBusy] = useState(false);
   if (!conn) return null;
+
+  async function togglePush(on: boolean) {
+    setPushBusy(true);
+    try {
+      if (on) await enablePush(conn!);
+      else await disablePush(conn);
+    } catch (e) {
+      Alert.alert('Notifications', e instanceof Error ? e.message : String(e));
+    } finally {
+      setPushBusy(false);
+    }
+  }
   const waiting = pendingCount(captures);
 
   function disconnect() {
@@ -28,6 +45,7 @@ export default function Settings() {
           text: 'Disconnect',
           style: 'destructive',
           onPress: async () => {
+            await disablePush(conn);
             queryClient.clear();
             await clearConnection();
           },
@@ -44,6 +62,16 @@ export default function Settings() {
         <Row title={conn.companyName} meta={new URL(conn.serverUrl).host} />
         <Row title="Access" value={`${conn.apiKey.slice(0, 11)}…`} valueTone="muted" />
         <Row title="Open Accounted" onPress={() => WebBrowser.openBrowserAsync(conn.serverUrl)} last />
+
+        <SectionLabel>Notifications</SectionLabel>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: space(3), minHeight: 52, paddingVertical: space(3) }}>
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text style={type.body}>Snap the receipt</Text>
+            <Text style={type.meta}>A notification right after a card payment</Text>
+          </View>
+          {pushBusy ? <ActivityIndicator /> : null}
+          <Switch value={push} onValueChange={togglePush} disabled={pushBusy} trackColor={{ true: hex.foreground }} />
+        </View>
 
         <SectionLabel>Receipts</SectionLabel>
         <Row

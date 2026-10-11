@@ -3,7 +3,8 @@ import { HedvigLettersSerif_400Regular } from '@expo-google-fonts/hedvig-letters
 import { QueryClientProvider } from '@tanstack/react-query';
 import { useFonts } from 'expo-font';
 import { addNetworkStateListener } from 'expo-network';
-import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
+import { DarkTheme, DefaultTheme, router, Stack, ThemeProvider } from 'expo-router';
+import * as Notifications from 'expo-notifications';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import { AppState, useColorScheme } from 'react-native';
@@ -15,6 +16,25 @@ import { runQueue } from '@/lib/queue';
 import { colors, fonts } from '@/lib/theme';
 
 SplashScreen.preventAutoHideAsync();
+
+// A push that arrives while the app is open still shows as a banner.
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: false, shouldSetBadge: false }),
+});
+
+/** Tapping "Snap the receipt" opens that payment, also from a cold start. */
+function useNotificationRouting(enabled: boolean) {
+  useEffect(() => {
+    if (!enabled) return;
+    const open = (r: Notifications.NotificationResponse | null) => {
+      const url = r?.notification.request.content.data?.url;
+      if (typeof url === 'string' && url.startsWith('/payment/')) router.push(url as never);
+    };
+    open(Notifications.getLastNotificationResponse());
+    const sub = Notifications.addNotificationResponseReceivedListener(open);
+    return () => sub.remove();
+  }, [enabled]);
+}
 
 /** Retry the capture queue whenever it could succeed: launch, foreground, reconnect, every minute. */
 function useQueueWorker(enabled: boolean) {
@@ -37,6 +57,7 @@ export default function RootLayout() {
   const connection = useConnection();
   const [fontsLoaded] = useFonts({ Geist_400Regular, Geist_500Medium, Geist_600SemiBold, HedvigLettersSerif_400Regular });
   useQueueWorker(!!connection);
+  useNotificationRouting(!!connection && !!fontsLoaded);
 
   useEffect(() => {
     if (fontsLoaded) SplashScreen.hideAsync();
