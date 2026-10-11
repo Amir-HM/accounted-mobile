@@ -224,6 +224,15 @@ export function Segmented<K extends string>({
   );
 }
 
+/** A small outlined pill for a period or a tag ("2025/2026"), like the web's period chips. */
+export function Tag({ children }: { children: string }) {
+  return (
+    <View style={s.tag}>
+      <Text style={s.tagText}>{children}</Text>
+    </View>
+  );
+}
+
 /** Attention is one ochre sentence (convention 6), with an optional inline action. */
 export function Attn({ children, action, onAction }: { children: string; action?: string; onAction?: () => void }) {
   return (
@@ -292,6 +301,15 @@ export const s = StyleSheet.create({
     textDecorationLine: 'underline',
     textDecorationColor: colors.border,
   },
+  tag: {
+    alignSelf: 'flex-start',
+    borderWidth: HAIRLINE,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    paddingHorizontal: space(3),
+    paddingVertical: 3,
+  },
+  tagText: { fontFamily: fonts.medium, fontSize: 12, color: colors.foreground, fontVariant: ['tabular-nums'] },
   segmented: {
     flexDirection: 'row',
     alignSelf: 'flex-start',

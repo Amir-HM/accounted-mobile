@@ -5,6 +5,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 
+import { Tag } from '@/components/ui';
 import { formatMoney, formatMoneyShort } from '@/lib/format';
 import { colors, fonts, motion, radius, space, type } from '@/lib/theme';
 
@@ -109,9 +110,7 @@ export function MonthBars({
     <View style={{ gap: space(3) }}>
       <View style={st.header}>
         <Text style={type.label}>Result per month</Text>
-        <View style={st.pill}>
-          <Text style={st.pillText}>{yearLabel}</Text>
-        </View>
+        <Tag>{yearLabel}</Tag>
       </View>
 
       {m ? (
@@ -182,14 +181,6 @@ function Bar({ size, index, color, dim }: { size: number; index: number; color: 
 
 const st = StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  pill: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    borderRadius: radius.pill,
-    paddingHorizontal: space(3),
-    paddingVertical: 3,
-  },
-  pillText: { fontFamily: fonts.medium, fontSize: 12, color: colors.foreground, fontVariant: ['tabular-nums'] },
   chart: { flexDirection: 'row', height: HEIGHT },
   baseline: { position: 'absolute', left: 0, right: 0, height: StyleSheet.hairlineWidth, backgroundColor: colors.border },
   slot: { flex: 1, paddingHorizontal: 2, borderRadius: radius.leaf },

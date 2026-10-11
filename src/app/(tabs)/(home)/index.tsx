@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { MonthBars } from '@/components/month-bars';
 import { Reveal, Skeleton } from '@/components/motion';
-import { Attn, Button, Row, SectionLabel } from '@/components/ui';
+import { Attn, Button, Row, SectionLabel, Tag } from '@/components/ui';
 import { captureUnlinked } from '@/lib/capture';
 import { useNamedAccounts } from '@/lib/accounts';
 import { ApiError, type Kpi } from '@/lib/api';
@@ -95,7 +95,6 @@ export default function Overview() {
   const fy = kpi.data ? fiscalYearLabel(kpi.data.period.period_start, kpi.data.period.period_end) : '';
   // Before next year's period exists, the latest one shown has ended: no "so far" then.
   const ongoing = !kpi.data || new Date().toISOString().slice(0, 10) <= kpi.data.period.period_end;
-  const fySoFar = ongoing ? `${fy} so far` : fy;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: insets.top }}>
@@ -153,11 +152,11 @@ export default function Overview() {
                 label="Result"
                 value={formatMoneyShort(k.netResult)}
                 tone={k.netResult < 0 ? 'negative' : undefined}
-                caption={fySoFar}
+                tag={fy}
               />
               <Tile label="VAT" value={formatMoneyShort(k.vatLiability)} caption="to pay" onPress={() => router.push('/vat')} />
-              <Tile label="Revenue" value={formatMoneyShort(k.totalRevenue)} caption={fySoFar} />
-              <Tile label="Expenses" value={formatMoneyShort(k.totalExpenses)} caption={fySoFar} />
+              <Tile label="Revenue" value={formatMoneyShort(k.totalRevenue)} tag={fy} />
+              <Tile label="Expenses" value={formatMoneyShort(k.totalExpenses)} tag={fy} />
             </Reveal>
 
             <Reveal index={4} style={{ paddingTop: space(8) }}>
@@ -237,12 +236,15 @@ function Tile({
   label,
   value,
   caption,
+  tag,
   tone,
   onPress,
 }: {
   label: string;
   value: string;
   caption?: string;
+  /** The period as a pill, matching the chart's. */
+  tag?: string;
   tone?: 'negative';
   onPress?: () => void;
 }) {
@@ -256,7 +258,7 @@ function Tile({
       <Text selectable style={[st.tileValue, tone === 'negative' && { color: colors.destructive }]} numberOfLines={1} adjustsFontSizeToFit>
         {value}
       </Text>
-      {caption ? <Text style={type.meta}>{caption}</Text> : null}
+      <View style={st.tileFoot}>{tag ? <Tag>{tag}</Tag> : caption ? <Text style={type.meta}>{caption}</Text> : null}</View>
     </Pressable>
   );
 }
@@ -282,6 +284,7 @@ const st = StyleSheet.create({
   },
   pillText: { fontFamily: fonts.medium, fontSize: 14, color: colors.foreground, fontVariant: ['tabular-nums'] },
   greetingRow: { flexDirection: 'row', alignItems: 'center', gap: space(3) },
+  tileFoot: { minHeight: 26, justifyContent: 'center', paddingTop: 2 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: space(3), paddingTop: space(6) },
   tileBox: { flexBasis: '47%', flexGrow: 1, borderRadius: radius.panel },
   tile: { borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, padding: space(4), gap: space(1) },
