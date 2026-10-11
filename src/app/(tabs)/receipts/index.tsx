@@ -12,7 +12,7 @@ import type { Transaction } from '@/lib/api';
 import { captureAndQueue, type CaptureMethod } from '@/lib/capture';
 import { formatMoney, tidyMerchant } from '@/lib/format';
 import { useHiddenIds, useMissingReceipts } from '@/lib/queries';
-import { discard, retry, useCaptures, type Capture } from '@/lib/queue';
+import { useCaptures, type Capture } from '@/lib/queue';
 import { colors, fonts, space, type } from '@/lib/theme';
 
 type Item =
@@ -35,18 +35,6 @@ function addMenu() {
   ActionSheetIOS.showActionSheetWithOptions({ options: ['Choose photo', 'Choose file', 'Cancel'], cancelButtonIndex: 2 }, (i) =>
     i === 0 ? captureUnlinked('photo') : i === 1 ? captureUnlinked('file') : undefined,
   );
-}
-
-function onCapturePress(c: Capture) {
-  if (c.state === 'failed') {
-    Alert.alert('Upload failed', c.error, [
-      { text: 'Remove from this iPhone', style: 'destructive', onPress: () => discard(c.id) },
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Try again', isPreferred: true, onPress: () => retry(c.id) },
-    ]);
-  } else if (c.state === 'done' && !c.transaction) {
-    router.push({ pathname: '/assign/[captureId]', params: { captureId: c.id } });
-  }
 }
 
 export default function Receipts() {

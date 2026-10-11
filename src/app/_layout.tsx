@@ -73,6 +73,7 @@ export default function RootLayout() {
             <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
             <Stack.Screen name="payment/[id]" />
             <Stack.Screen name="account/[id]" />
+            <Stack.Screen name="capture/[id]" />
             <Stack.Screen
               name="assign/[captureId]"
               options={{

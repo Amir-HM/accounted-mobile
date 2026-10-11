@@ -8,6 +8,7 @@ import { CaptureThumb } from '@/components/capture-row';
 import { EmptyState } from '@/components/ui';
 import { formatMoney, tidyMerchant } from '@/lib/format';
 import { useHiddenIds, useMissingReceipts } from '@/lib/queries';
+import { suggestPayment } from '@/lib/checks';
 import { assignTransaction, useCaptures } from '@/lib/queue';
 import { colors, fonts, space, type } from '@/lib/theme';
 
@@ -19,7 +20,10 @@ export default function Assign() {
   const missing = useMissingReceipts();
   const hidden = useHiddenIds();
   const taken = new Set(captures.filter((c) => c.transaction && c.state !== 'failed').map((c) => c.transaction!.id));
-  const options = (missing.data ?? []).filter((t) => !hidden.includes(t.id) && !taken.has(t.id));
+  const open = (missing.data ?? []).filter((t) => !hidden.includes(t.id) && !taken.has(t.id));
+  // The payment the reading points at goes first.
+  const suggested = suggestPayment(capture?.extraction, open);
+  const options = suggested ? [suggested, ...open.filter((t) => t.id !== suggested.id)] : open;
 
   if (!capture) return null;
 
@@ -65,9 +69,12 @@ export default function Assign() {
             }
           >
             <Text style={st.date}>{t.date.slice(0, 10)}</Text>
-            <Text style={[type.body, { flex: 1 }]} numberOfLines={1}>
-              {label}
-            </Text>
+            <View style={{ flex: 1 }}>
+              <Text style={type.body} numberOfLines={1}>
+                {label}
+              </Text>
+              {suggested?.id === t.id ? <Text style={[type.meta, { color: colors.success }]}>Same amount and date as the receipt</Text> : null}
+            </View>
             <Text style={st.amount}>{formatMoney(t.amount, t.currency)}</Text>
           </Pressable>
         );

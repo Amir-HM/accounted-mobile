@@ -3,8 +3,10 @@ import { Directory, File, Paths, UploadType } from 'expo-file-system';
 import Storage from 'expo-sqlite/kv-store';
 import { useSyncExternalStore } from 'react';
 
-import { ApiError, attachDocument, documentsUrl, type UploadedDocument } from './api';
-import { loadConnection } from './connection';
+import { ApiError, attachDocument, documentsUrl, request, type UploadedDocument } from './api';
+import { verify } from './checks';
+import { loadConnection, type Connection } from './connection';
+import { completeUpload, createUpload, type Extraction } from './mcp';
 import { showToast } from './toast';
 
 /**
@@ -35,6 +37,11 @@ export type Capture = {
   transaction?: { id: string; label: string; amount: number; currency: string; date: string };
   state: CaptureState;
   documentId?: string;
+  inboxItemId?: string;
+  extraction?: Extraction;
+  uploadId?: string;
+  uploadUrl?: string;
+  uploadExpiresAt?: string;
   archivedAt?: string;
   attachedAt?: string;
   attempts: number;
@@ -170,6 +177,77 @@ export function discard(id: string) {
   commit(items.filter((x) => x.id !== id));
 }
 
+type Uploaded = { documentId: string; sha256: string; inboxItemId?: string | null; extraction?: Extraction | null };
+
+/**
+ * The inbox upload (MCP tools): reserve a signed URL, PUT the bytes (no body
+ * size cap, background session), then complete, which archives the file,
+ * creates the inbox item and reads it (when the server has an AI backend).
+ * The upload id is kept on the capture so a retry completes the same upload.
+ */
+async function uploadViaInbox(conn: Connection, c: Capture): Promise<Uploaded> {
+  let uploadId = c.uploadId;
+  let url = c.uploadUrl;
+  if (!uploadId || !url || (c.uploadExpiresAt && new Date(c.uploadExpiresAt).getTime() < Date.now() + 60_000)) {
+    const r = await createUpload(conn, c.fileName, c.mimeType);
+    uploadId = r.upload_id;
+    url = r.upload_url;
+    patch(c.id, { uploadId, uploadUrl: url, uploadExpiresAt: r.expires_at });
+  }
+  const put = await captureFile(c).upload(url, {
+    httpMethod: 'PUT',
+    uploadType: UploadType.BINARY_CONTENT,
+    mimeType: c.mimeType,
+    headers: { 'Content-Type': c.mimeType },
+    sessionType: 'background',
+    onProgress: ({ bytesSent, totalBytes }) => totalBytes > 0 && setProgress(c.id, Math.min(1, bytesSent / totalBytes)),
+  });
+  // 409 = these bytes already sit at this path (a retry after a lost response).
+  if ((put.status < 200 || put.status >= 300) && put.status !== 409) {
+    throw new ApiError(put.status, `HTTP_${put.status}`, `Upload failed (${put.status}).`);
+  }
+  setProgress(c.id, 1);
+  const done = await completeUpload(conn, uploadId, c.fileName, c.mimeType);
+  const doc = await request<UploadedDocument>(conn, `/companies/${conn.companyId}/documents/${done.document_id}`);
+  return { documentId: done.document_id, sha256: doc.data.sha256_hash, inboxItemId: done.inbox_item_id, extraction: done.extracted_data ?? null };
+}
+
+/** The plain archive upload (REST multipart): no inbox item, no reading. */
+async function uploadViaRest(conn: Connection, c: Capture): Promise<Uploaded> {
+  const res = await captureFile(c).upload(documentsUrl(conn), {
+    uploadType: UploadType.MULTIPART,
+    fieldName: 'file',
+    mimeType: c.mimeType,
+    headers: { Authorization: `Bearer ${conn.apiKey}`, 'Idempotency-Key': c.id, Accept: 'application/json' },
+    parameters: { upload_source: c.source },
+    sessionType: 'background',
+    onProgress: ({ bytesSent, totalBytes }) => totalBytes > 0 && setProgress(c.id, Math.min(1, bytesSent / totalBytes)),
+  });
+  let body: any = null;
+  try {
+    body = JSON.parse(res.body);
+  } catch {}
+  if (res.status < 200 || res.status >= 300 || !body?.data) {
+    const e = body?.error;
+    throw new ApiError(res.status, e?.code ?? `HTTP_${res.status}`, e?.message_en ?? e?.message ?? `Upload failed (${res.status}).`);
+  }
+  const doc = body.data as UploadedDocument;
+  return { documentId: doc.id, sha256: doc.sha256_hash };
+}
+
+/** "OpenRouter · 21,19 USD · 2026-10-05" */
+export function readingLine(x: Extraction | null | undefined): string {
+  if (!x) return '';
+  const total = x.totals?.total;
+  return [
+    x.supplier?.name,
+    total != null ? new Intl.NumberFormat('sv-SE', { style: 'currency', currency: x.invoice?.currency || 'SEK' }).format(total) : null,
+    x.invoice?.invoiceDate,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
 const retriable = (e: unknown) =>
   e instanceof ApiError ? e.status === 0 || e.status === 408 || e.status === 429 || e.status >= 500 : true;
 
@@ -189,36 +267,28 @@ async function work() {
       let documentId = c.documentId;
       if (!documentId) {
         patch(c.id, { state: 'uploading', attempts: c.attempts + 1 });
-        const res = await captureFile(c).upload(documentsUrl(conn), {
-          uploadType: UploadType.MULTIPART,
-          fieldName: 'file',
-          mimeType: c.mimeType,
-          headers: { Authorization: `Bearer ${conn.apiKey}`, 'Idempotency-Key': c.id, Accept: 'application/json' },
-          parameters: { upload_source: c.source },
-          sessionType: 'background',
-          onProgress: ({ bytesSent, totalBytes }) => totalBytes > 0 && setProgress(c.id, Math.min(1, bytesSent / totalBytes)),
+        const up = await uploadViaInbox(conn, c).catch((e) => {
+          // A server without the MCP endpoint still takes the plain archive upload.
+          if (e instanceof ApiError && e.code === 'MCP_UNAVAILABLE') return uploadViaRest(conn, c);
+          throw e;
         });
         setProgress(c.id, null);
-        let body: any = null;
-        try {
-          body = JSON.parse(res.body);
-        } catch {}
-        if (res.status < 200 || res.status >= 300 || !body?.data) {
-          const e = body?.error;
-          throw new ApiError(res.status, e?.code ?? `HTTP_${res.status}`, e?.message_en ?? e?.message ?? `Upload failed (${res.status}).`);
-        }
-        const doc = body.data as UploadedDocument;
-        if (doc.sha256_hash !== c.sha256) {
+        if (up.sha256 !== c.sha256) {
           showToast('Upload failed the integrity check. Keep the paper receipt.', 'error');
           patch(c.id, {
             state: 'failed',
-            documentId: doc.id,
+            documentId: up.documentId,
             error: 'The archived file does not match the capture (hash mismatch). Keep the paper receipt.',
           });
           continue;
         }
-        documentId = doc.id;
-        patch(c.id, { documentId, archivedAt: new Date().toISOString() });
+        documentId = up.documentId;
+        patch(c.id, {
+          documentId,
+          inboxItemId: up.inboxItemId ?? undefined,
+          extraction: up.extraction ?? undefined,
+          archivedAt: new Date().toISOString(),
+        });
       }
       if (c.transaction && !c.attachedAt) {
         patch(c.id, { state: 'attaching' });
@@ -226,7 +296,18 @@ async function work() {
         patch(c.id, { attachedAt: new Date().toISOString() });
       }
       patch(c.id, { state: 'done', error: undefined });
-      showToast(c.transaction ? `Receipt attached to ${c.transaction.label}` : 'Receipt archived');
+      const latest = items.find((x) => x.id === c.id);
+      const v = verify(latest?.extraction, c.transaction);
+      showToast(
+        c.transaction
+          ? v.state === 'warn'
+            ? `Attached to ${c.transaction.label}. ${v.summary}.`
+            : `Receipt attached to ${c.transaction.label}`
+          : v.state === 'unread'
+            ? 'Receipt archived'
+            : `Receipt read: ${readingLine(latest?.extraction)}`,
+        v.state === 'warn' ? 'error' : 'default',
+      );
     } catch (e) {
       setProgress(c.id, null);
       const msg = e instanceof Error ? e.message : String(e);
