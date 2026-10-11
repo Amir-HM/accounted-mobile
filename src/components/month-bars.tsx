@@ -25,9 +25,9 @@ function monthAt(start: string, i: number) {
 
 /**
  * Result per month, the web KPI chart in miniature: profit grows up in ink,
- * loss hangs down in terracotta, from a baseline at zero. Touch or drag
- * across the chart to read a month: its result, and money in and out. The
- * latest month with activity is selected to begin with.
+ * loss hangs down in terracotta, from a baseline at zero. Nothing is selected
+ * at first and the readout shows the year so far; touch or drag across the
+ * chart to read a month, tap it again to go back to the year.
  */
 export function MonthBars({ months, start, yearLabel }: { months: Month[]; start: string; yearLabel: string }) {
   const maxUp = Math.max(0, ...months.map((m) => m.net));
@@ -39,18 +39,24 @@ export function MonthBars({ months, start, yearLabel }: { months: Month[]; start
   const down = HEIGHT - up;
   const scale = Math.max(maxUp / Math.max(up, 1), maxDown / Math.max(down, 1)) || 1;
 
-  let latest = months.length - 1;
-  while (latest > 0 && months[latest].net === 0 && months[latest].income === 0 && months[latest].expenses === 0) latest--;
-  const [picked, setPicked] = useState<number | null>(null);
-  const sel = picked ?? latest;
-  const m = months[sel];
+  const [sel, setSel] = useState<number | null>(null);
+  const year = months.reduce(
+    (a, x) => ({ label: '', net: a.net + x.net, income: a.income + x.income, expenses: a.expenses + x.expenses }),
+    { label: '', net: 0, income: 0, expenses: 0 } as Month,
+  );
+  const m = sel == null ? year : months[sel];
+  const title = sel == null ? `${yearLabel} so far` : monthLong.format(monthAt(start, sel));
 
   const width = useSharedValue(1);
   const count = months.length;
   const pick = (i: number) => {
     if (i === sel) return;
     Haptics.selectionAsync();
-    setPicked(i);
+    setSel(i);
+  };
+  const toggle = (i: number) => {
+    Haptics.selectionAsync();
+    setSel(i === sel ? null : i);
   };
   const at = (x: number) => {
     'worklet';
@@ -60,9 +66,8 @@ export function MonthBars({ months, start, yearLabel }: { months: Month[]; start
     Gesture.Pan()
       .activeOffsetX([-8, 8])
       .failOffsetY([-12, 12])
-      .onBegin((e) => scheduleOnRN(pick, at(e.x)))
       .onUpdate((e) => scheduleOnRN(pick, at(e.x))),
-    Gesture.Tap().onEnd((e) => scheduleOnRN(pick, at(e.x))),
+    Gesture.Tap().onEnd((e) => scheduleOnRN(toggle, at(e.x))),
   );
 
   return (
@@ -76,7 +81,7 @@ export function MonthBars({ months, start, yearLabel }: { months: Month[]; start
 
       {m ? (
         <View style={{ gap: 2 }}>
-          <Text style={type.meta}>{monthLong.format(monthAt(start, sel))}</Text>
+          <Text style={type.meta}>{title}</Text>
           <Text style={[type.number, { fontSize: 26, lineHeight: 32 }, m.net < 0 && { color: colors.destructive }]}>
             {formatMoney(m.net)}
           </Text>
@@ -91,10 +96,10 @@ export function MonthBars({ months, start, yearLabel }: { months: Month[]; start
           accessible
           accessibilityRole="adjustable"
           accessibilityLabel={`Result per month, ${yearLabel}`}
-          accessibilityValue={m ? { text: `${monthLong.format(monthAt(start, sel))}: ${formatMoney(m.net)}` } : undefined}
+          accessibilityValue={{ text: `${title}: ${formatMoney(m.net)}` }}
           onAccessibilityAction={(e) => {
-            if (e.nativeEvent.actionName === 'increment') pick(Math.min(count - 1, sel + 1));
-            if (e.nativeEvent.actionName === 'decrement') pick(Math.max(0, sel - 1));
+            if (e.nativeEvent.actionName === 'increment') pick(sel == null ? 0 : Math.min(count - 1, sel + 1));
+            if (e.nativeEvent.actionName === 'decrement') pick(sel == null ? count - 1 : Math.max(0, sel - 1));
           }}
           accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
           onLayout={(e) => width.set(e.nativeEvent.layout.width)}
@@ -104,10 +109,10 @@ export function MonthBars({ months, start, yearLabel }: { months: Month[]; start
             {months.map((mo, i) => (
               <View key={`${mo.label}-${i}`} style={[st.slot, i === sel && st.slotOn]}>
                 <View style={{ height: up, justifyContent: 'flex-end' }}>
-                  {mo.net > 0 ? <Bar size={mo.net / scale} index={i} color={colors.foreground} dim={i !== sel} /> : null}
+                  {mo.net > 0 ? <Bar size={mo.net / scale} index={i} color={colors.foreground} dim={sel != null && i !== sel} /> : null}
                 </View>
                 <View style={{ height: down }}>
-                  {mo.net < 0 ? <Bar size={-mo.net / scale} index={i} color={colors.destructive} dim={i !== sel} /> : null}
+                  {mo.net < 0 ? <Bar size={-mo.net / scale} index={i} color={colors.destructive} dim={sel != null && i !== sel} /> : null}
                 </View>
               </View>
             ))}
@@ -116,7 +121,7 @@ export function MonthBars({ months, start, yearLabel }: { months: Month[]; start
             {months.map((mo, i) => {
               const d = monthAt(start, i);
               const show = i === sel || i === 0 || i === count - 1 || d.getMonth() === 0;
-              const near = Math.abs(i - sel) <= 1 && i !== sel; // keep the selected label from colliding
+              const near = sel != null && Math.abs(i - sel) <= 1 && i !== sel; // keep the selected label from colliding
               return (
                 <Text key={`${mo.label}-${i}`} style={[st.tick, i === sel && st.tickOn]} numberOfLines={1}>
                   {show && !near ? monthShort.format(d) : ''}
