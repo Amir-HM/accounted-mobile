@@ -11,7 +11,8 @@ import type { Connection } from './connection';
  * bank feed and pushes for each new card payment; this iPhone registers its
  * Expo push token there by proving it holds a key for the company.
  */
-export const PUSH_RELAY = 'https://accounted-mobile-push.deus-labs.com';
+/** The relay this build registers with (app.json → extra.pushRelay); see infra/push-relay. Empty = no push. */
+export const PUSH_RELAY = (Constants.expoConfig?.extra?.pushRelay as string | undefined) ?? '';
 const KEY = 'accounted.pushToken';
 
 let token: string | null = Storage.getItemSync(KEY);
@@ -38,6 +39,7 @@ async function relay(path: '/register' | '/unregister', conn: Connection, t: str
 }
 
 export async function enablePush(conn: Connection): Promise<void> {
+  if (!PUSH_RELAY) throw new Error('This build has no notification relay configured.');
   if (!Device.isDevice) throw new Error('Notifications need a real iPhone, not the simulator.');
   const current = await Notifications.getPermissionsAsync();
   const granted = current.granted || (await Notifications.requestPermissionsAsync()).granted;

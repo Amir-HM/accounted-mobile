@@ -84,7 +84,9 @@
       "eas": {
         "projectId": "0025b398-a363-45ef-b3c4-59831e8f6968"
       },
-      "defaultServer": "accounted.deus-labs.com"
+      "defaultServer": "accounted.deus-labs.com",
+      "oauthReturnHop": "https://accounted-mobile.deus-labs.com/oauth/callback",
+      "pushRelay": "https://accounted-mobile-push.deus-labs.com"
     }
   }
 }

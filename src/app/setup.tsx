@@ -10,7 +10,7 @@ import { normalizeServerUrl, saveConnection } from '@/lib/connection';
 import { signInWithAccounted } from '@/lib/oauth';
 import { colors, fonts, radius, space, type, useHex } from '@/lib/theme';
 
-const SCOPES = 'companies:read, documents:read/write, transactions:read/write, reports:read';
+const SCOPES = 'companies:read, documents:read/write, transactions:read/write, reports:read, bookkeeping:write, pending_operations:read/approve';
 // A build may preset its own server (app.json → extra.defaultServer).
 const DEFAULT_SERVER = (Constants.expoConfig?.extra?.defaultServer as string | undefined) ?? '';
 

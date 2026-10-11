@@ -1,3 +1,4 @@
+import Constants from 'expo-constants';
 import * as Crypto from 'expo-crypto';
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
@@ -11,7 +12,8 @@ import * as WebBrowser from 'expo-web-browser';
  * app's return URL, which travels inside `state`. The access token is an
  * ordinary scoped API key that does not expire server-side.
  */
-export const OAUTH_BOUNCE_URI = 'https://accounted-mobile.deus-labs.com/oauth/callback';
+/** The https return hop this build uses (app.json → extra.oauthReturnHop); see infra/oauth-bounce. */
+export const OAUTH_BOUNCE_URI = (Constants.expoConfig?.extra?.oauthReturnHop as string | undefined) ?? '';
 export const APP_SCOPES = [
   'companies:read',
   'documents:read',
@@ -41,6 +43,7 @@ async function json<T>(res: Response, what: string): Promise<T> {
 
 /** Returns an API key for this server, or null if the user cancelled. */
 export async function signInWithAccounted(serverUrl: string): Promise<string | null> {
+  if (!OAUTH_BOUNCE_URI) throw new OAuthError('This build has no sign-in return address configured. Connect with an API key.');
   const meta = await fetch(`${serverUrl}/.well-known/oauth-authorization-server`)
     .then((r) => json<Metadata>(r, 'Discovery'))
     .catch(() => {
