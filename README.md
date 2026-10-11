@@ -42,7 +42,7 @@ The app uses only Accounted's public interfaces, and no Accounted source code is
 
 Permissions the app needs:
 ```
-companies:read documents:read documents:write transactions:read transactions:write reports:read
+companies:read documents:read documents:write transactions:read transactions:write reports:read invoices:read
 bookkeeping:write pending_operations:read pending_operations:approve
 ```
 

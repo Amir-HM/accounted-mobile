@@ -2,12 +2,19 @@ import { QueryClient, useQuery } from '@tanstack/react-query';
 
 import {
   ApiError,
+  type BankConnection,
   getKpi,
   getTransaction,
+  getVatDeclaration,
+  getVatPeriodType,
+  type Invoice,
+  listBankConnections,
   listCashAccounts,
   listFiscalPeriods,
+  listInvoices,
   listLinkedEntryIds,
   listTransactionsSince,
+  listVatFilings,
   type Transaction,
 } from './api';
 import { useConnection, type Connection } from './connection';
@@ -161,5 +168,56 @@ export function usePendingOps() {
     },
     enabled: !!c,
     refetchInterval: 60_000,
+  });
+}
+
+// ---- Bank connections, invoices, VAT (read-only screens) ----
+
+export function useBankConnections() {
+  const c = useConnection();
+  return useQuery({
+    queryKey: ['bank-connections', c?.serverUrl, c?.companyId],
+    queryFn: () => listBankConnections(c!),
+    enabled: !!c,
+  });
+}
+
+/** A connection that needs you: broken, expired, or consent ending within two weeks. */
+export function bankNeedsAttention(b: BankConnection, now = Date.now()) {
+  if (b.status !== 'active') return true;
+  return !!b.consent_expires && new Date(b.consent_expires).getTime() - now < 14 * 86400_000;
+}
+
+export function useInvoices() {
+  const c = useConnection();
+  return useQuery({
+    queryKey: ['invoices', c?.serverUrl, c?.companyId],
+    queryFn: () => listInvoices(c!),
+    enabled: !!c,
+    // Without invoices:read (a sign-in from before this screen) the answer is "not allowed", not an error to retry.
+    retry: (n, e) => !(e instanceof ApiError && e.code === 'INSUFFICIENT_SCOPE') && n < 2,
+  });
+}
+
+/** Unpaid and past its due date (the server's own "overdue" or a sent invoice whose date has passed). */
+export function isOverdue(i: Invoice, today = new Date().toISOString().slice(0, 10)) {
+  return i.remaining_amount > 0 && (i.status === 'overdue' || ((i.status === 'sent' || i.status === 'partially_paid') && i.due_date < today));
+}
+
+/** The VAT return for the period that contains today, in the company's own period length. */
+export function useVatNow() {
+  const c = useConnection();
+  return useQuery({
+    queryKey: ['vat-now', c?.serverUrl, c?.companyId],
+    queryFn: async () => {
+      const s = await getVatPeriodType(c!);
+      if (!s.vat_registered || !s.moms_period) return null;
+      const now = new Date();
+      const year = now.getFullYear();
+      const period = s.moms_period === 'monthly' ? now.getMonth() + 1 : s.moms_period === 'quarterly' ? Math.floor(now.getMonth() / 3) + 1 : 1;
+      const [declaration, filings] = await Promise.all([getVatDeclaration(c!, s.moms_period, year, period), listVatFilings(c!)]);
+      return { declaration, filings };
+    },
+    enabled: !!c,
   });
 }

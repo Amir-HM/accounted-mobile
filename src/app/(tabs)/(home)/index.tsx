@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { ArrowLeftRight, Bot, ChevronRight, FileWarning, ScanLine, Upload } from 'lucide-react-native';
+import { ArrowLeftRight, Bot, ChevronRight, FileText, FileWarning, Landmark, Percent, ScanLine, Upload } from 'lucide-react-native';
 import { useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,11 +9,11 @@ import { Reveal, Skeleton } from '@/components/motion';
 import { Attn, Button, Row, SectionLabel } from '@/components/ui';
 import { captureUnlinked } from '@/lib/capture';
 import { useNamedAccounts } from '@/lib/accounts';
-import type { Kpi } from '@/lib/api';
+import { ApiError, type Kpi } from '@/lib/api';
 import { useConnection } from '@/lib/connection';
 import { formatMoney, formatMoneyShort, maskIban } from '@/lib/format';
 import { usePref } from '@/lib/prefs';
-import { lookbackLabel, useCashAccounts, useCurrentKpi, useHiddenIds, useLookbackDays, useMissingReceipts, usePendingOps, useToBook } from '@/lib/queries';
+import { bankNeedsAttention, isOverdue, lookbackLabel, useBankConnections, useCashAccounts, useInvoices, useCurrentKpi, useHiddenIds, useLookbackDays, useMissingReceipts, usePendingOps, useToBook } from '@/lib/queries';
 import { pendingCount, useCaptures } from '@/lib/queue';
 import { colors, fonts, radius, space, type, useHex } from '@/lib/theme';
 
@@ -61,6 +61,8 @@ export default function Overview() {
   const toBook = useToBook();
   const pending = usePendingOps();
   const approvals = pending.data?.length ?? 0;
+  const banks = useBankConnections();
+  const invoices = useInvoices();
 
   const inFlight = new Set(captures.filter((c) => c.transaction && c.state !== 'failed').map((c) => c.transaction!.id));
   const missingCount = (missing.data ?? []).filter((t) => !hidden.includes(t.id) && !inFlight.has(t.id)).length;
@@ -74,6 +76,10 @@ export default function Overview() {
     .sort()
     .at(-1);
   const staleHours = latest ? Math.round((now - new Date(latest).getTime()) / 3600_000) : 0;
+  const brokenBanks = (banks.data ?? []).filter((b) => bankNeedsAttention(b, now));
+  const todayIso = new Date(now).toISOString().slice(0, 10);
+  const unpaidInvoices = (invoices.data?.invoices ?? []).filter((i) => i.remaining_amount > 0 && !['draft', 'cancelled', 'credited'].includes(i.status));
+  const overdueInvoices = unpaidInvoices.filter((i) => isOverdue(i, todayIso));
 
   const refreshing = accounts.isRefetching || kpi.isRefetching || missing.isRefetching;
   const refresh = () => Promise.all([accounts.refetch(), kpi.refetch(), missing.refetch()]);
@@ -106,8 +112,8 @@ export default function Overview() {
             <Attn action="Try again" onAction={refresh}>
               {error.message}
             </Attn>
-          ) : staleHours >= STALE_HOURS ? (
-            <Attn>{`The bank has not synced for ${Math.round(staleHours / 24)} days. Renew the bank connection in Accounted on the web.`}</Attn>
+          ) : staleHours >= STALE_HOURS && !brokenBanks.length ? (
+            <Attn action="See banks" onAction={() => router.push('/banks')}>{`The bank has not synced for ${Math.round(staleHours / 24)} days.`}</Attn>
           ) : null}
         </Reveal>
 
@@ -130,6 +136,30 @@ export default function Overview() {
                   meta="Prepared by Claude or the receipt hunt"
                   count={approvals}
                   onPress={() => router.push('/approvals')}
+                />
+              </>
+            ) : null}
+            {brokenBanks.length ? (
+              <>
+                <View style={st.innerDivider} />
+                <TodoRow
+                  icon={<Landmark size={18} strokeWidth={1.5} color={hex.attn} />}
+                  title={brokenBanks.length === 1 ? `${brokenBanks[0].bank} needs attention` : 'Bank connections need attention'}
+                  meta="New payments stop coming in until it is fixed"
+                  count={brokenBanks.length > 1 ? brokenBanks.length : 0}
+                  onPress={() => router.push('/banks')}
+                />
+              </>
+            ) : null}
+            {overdueInvoices.length ? (
+              <>
+                <View style={st.innerDivider} />
+                <TodoRow
+                  icon={<FileText size={18} strokeWidth={1.5} color={hex.attn} />}
+                  title="Overdue invoices"
+                  meta={formatMoney(overdueInvoices.filter((i) => i.currency === 'SEK').reduce((a, i) => a + i.remaining_amount, 0))}
+                  count={overdueInvoices.length}
+                  onPress={() => router.push('/invoices')}
                 />
               </>
             ) : null}
@@ -178,7 +208,7 @@ export default function Overview() {
                 tone={k.netResult < 0 ? 'negative' : undefined}
                 caption={fySoFar}
               />
-              <Tile label="VAT" value={formatMoneyShort(k.vatLiability)} caption="to pay" />
+              <Tile label="VAT" value={formatMoneyShort(k.vatLiability)} caption="to pay" onPress={() => router.push('/vat')} />
               <Tile label="Revenue" value={formatMoneyShort(k.totalRevenue)} caption={fySoFar} />
               <Tile label="Expenses" value={formatMoneyShort(k.totalExpenses)} caption={fySoFar} />
             </Reveal>
@@ -217,6 +247,27 @@ export default function Overview() {
             ))}
           </Reveal>
         ) : null}
+
+        {/* More from the books */}
+        <Reveal index={6} style={{ paddingTop: space(6) }}>
+          <SectionLabel>More</SectionLabel>
+          <Row
+            icon={FileText}
+            title="Invoices"
+            meta={
+              invoices.error instanceof ApiError && invoices.error.code === 'INSUFFICIENT_SCOPE'
+                ? 'Sign in again to see them'
+                : invoices.data
+                ? unpaidInvoices.length
+                  ? `${unpaidInvoices.length} unpaid${overdueInvoices.length ? ` · ${overdueInvoices.length} overdue` : ''}`
+                  : 'Nothing outstanding'
+                : undefined
+            }
+            onPress={() => router.push('/invoices')}
+          />
+          <Row icon={Landmark} title="Bank connections" meta={banks.data ? (brokenBanks.length ? 'Needs attention' : 'All connected') : undefined} onPress={() => router.push('/banks')} />
+          <Row icon={Percent} title="VAT return" meta="This period so far" onPress={() => router.push('/vat')} last />
+        </Reveal>
       </ScrollView>
     </View>
   );
@@ -257,15 +308,31 @@ function TodoRow({
   );
 }
 
-function Tile({ label, value, caption, tone }: { label: string; value: string; caption?: string; tone?: 'negative' }) {
+function Tile({
+  label,
+  value,
+  caption,
+  tone,
+  onPress,
+}: {
+  label: string;
+  value: string;
+  caption?: string;
+  tone?: 'negative';
+  onPress?: () => void;
+}) {
   return (
-    <View style={[st.tileBox, st.tile]}>
+    <Pressable
+      disabled={!onPress}
+      onPress={onPress}
+      style={({ pressed }) => [st.tileBox, st.tile, pressed && { backgroundColor: colors.muted }]}
+    >
       <Text style={type.label}>{label}</Text>
       <Text selectable style={[st.tileValue, tone === 'negative' && { color: colors.destructive }]} numberOfLines={1} adjustsFontSizeToFit>
         {value}
       </Text>
       {caption ? <Text style={type.meta}>{caption}</Text> : null}
-    </View>
+    </Pressable>
   );
 }
 

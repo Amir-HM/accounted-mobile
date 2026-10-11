@@ -15,7 +15,14 @@ export class ApiError extends Error {
   }
 }
 
-type Envelope<T> = { data: T; meta?: { next_cursor?: string | null; audit?: { voucher_number?: string } } };
+type Envelope<T> = {
+  data: T;
+  meta?: {
+    next_cursor?: string | null;
+    audit?: { voucher_number?: string };
+    coverage?: { covers_from: string | null; has_pre_register_invoices: boolean };
+  };
+};
 
 export async function request<T>(
   conn: Pick<Connection, 'serverUrl' | 'apiKey'>,
@@ -43,7 +50,8 @@ export async function request<T>(
   } catch {
     // An HTML page here means the URL is not an Accounted server.
   }
-  if (res.status === 429) throw new ApiError(429, 'RATE_LIMITED', 'Too many requests right now. Trying again shortly.');
+  // A 429 the server explains (a bank cooldown, say) keeps its own code; a bare one is our rate limit.
+  if (res.status === 429 && !body?.error?.code) throw new ApiError(429, 'RATE_LIMITED', 'Too many requests right now. Trying again shortly.');
   if (!res.ok || !body) {
     const e = body?.error;
     throw new ApiError(
@@ -216,3 +224,84 @@ export const markNoDocumentRequired = (c: Connection, journalEntryId: string, re
 
 export const unmarkNoDocumentRequired = (c: Connection, journalEntryId: string) =>
   request(c, `/companies/${c.companyId}/journal-entries/${journalEntryId}/no-document-required`, { method: 'DELETE' });
+
+// ---- Bank connections (PSD2): freshness and consent ----
+
+export type BankConnection = {
+  connection_id: string;
+  bank: string;
+  status: 'active' | 'error' | 'expired' | 'pending' | string;
+  since: string | null;
+  last_synced_at: string | null;
+  consent_expires: string | null;
+  error_message: string | null;
+};
+
+export const listBankConnections = (c: Connection) =>
+  request<{ bank_connections: BankConnection[] }>(c, `/companies/${c.companyId}/bank-connections`).then((r) => r.data.bank_connections);
+
+/** Fetch new transactions now. The server refuses within 15 minutes of the last attempt (BANK_SYNC_COOLDOWN). */
+export const syncBankConnection = (c: Connection, id: string) =>
+  request<{ imported: number; duplicates: number; last_synced_at: string }>(
+    c,
+    `/companies/${c.companyId}/bank-connections/${id}/sync`,
+    { method: 'POST', body: '{}' },
+  ).then((r) => r.data);
+
+// ---- Customer invoices (read-only here) ----
+
+export type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'partially_paid' | 'overdue' | 'cancelled' | 'credited';
+export type Invoice = {
+  id: string;
+  invoice_number: string | null;
+  customer_name: string;
+  invoice_date: string;
+  due_date: string;
+  status: InvoiceStatus;
+  document_type: string;
+  currency: string;
+  total: number;
+  remaining_amount: number;
+  paid_at: string | null;
+};
+
+export async function listInvoices(c: Connection): Promise<{ invoices: Invoice[]; coversFrom: string | null; preRegister: boolean }> {
+  const out: Invoice[] = [];
+  let cursor: string | null | undefined;
+  let coverage: { covers_from: string | null; has_pre_register_invoices: boolean } | undefined;
+  for (let page = 0; page < 5; page++) {
+    const q = new URLSearchParams({ document_type: 'invoice', limit: '100', ...(cursor ? { cursor } : {}) });
+    const r = await request<Invoice[]>(c, `/companies/${c.companyId}/invoices?${q}`);
+    out.push(...r.data);
+    coverage ??= r.meta?.coverage;
+    cursor = r.meta?.next_cursor;
+    if (!cursor) break;
+  }
+  return { invoices: out, coversFrom: coverage?.covers_from ?? null, preRegister: !!coverage?.has_pre_register_invoices };
+}
+
+// ---- VAT return (momsdeklaration) ----
+
+export type VatPeriodType = 'monthly' | 'quarterly' | 'yearly';
+export type VatDeclaration = {
+  period: { type: VatPeriodType; year: number; period: number; start: string; end: string };
+  rutor: Record<string, number>;
+};
+export type VatFiling = {
+  period_type: VatPeriodType;
+  year: number;
+  period: number;
+  period_start: string;
+  period_end: string;
+  filed_on: string;
+  source: 'skatteverket' | 'manual';
+};
+
+export const getVatPeriodType = (c: Connection) =>
+  request<{ moms_period: VatPeriodType | null; vat_registered: boolean }>(c, `/companies/${c.companyId}/settings`).then((r) => r.data);
+
+export const getVatDeclaration = (c: Connection, type: VatPeriodType, year: number, period: number) =>
+  request<VatDeclaration>(c, `/companies/${c.companyId}/reports/vat-declaration?period_type=${type}&year=${year}&period=${period}`).then((r) => r.data);
+
+export const listVatFilings = (c: Connection) =>
+  request<VatFiling[]>(c, `/companies/${c.companyId}/reports/vat-declaration/filings`).then((r) => r.data);
