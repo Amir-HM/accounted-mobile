@@ -1,20 +1,29 @@
 import { Image } from 'expo-image';
-import { SymbolView } from 'expo-symbols';
+import { FileText } from 'lucide-react-native';
 import { View } from 'react-native';
 
 import { Row } from '@/components/ui';
 import { formatMoney, formatRelative } from '@/lib/format';
 import { captureFile, type Capture } from '@/lib/queue';
-import { colors, radius } from '@/lib/theme';
+import { colors, radius, useHex } from '@/lib/theme';
 
-export function CaptureThumb({ capture, size = 40 }: { capture: Capture; size?: number }) {
-  const box = { width: size, height: size, borderRadius: radius.thumb, borderCurve: 'continuous' as const, overflow: 'hidden' as const };
+export function CaptureThumb({ capture, size = 36 }: { capture: Capture; size?: number }) {
+  const hex = useHex();
+  const box = {
+    width: size,
+    height: size,
+    borderRadius: radius.leaf,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden' as const,
+    backgroundColor: colors.muted,
+  };
   if (capture.mimeType.startsWith('image/')) {
     return <Image source={captureFile(capture).uri} recyclingKey={capture.id} style={box} contentFit="cover" transition={120} />;
   }
   return (
-    <View style={[box, { backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center' }]}>
-      <SymbolView name="doc.richtext" size={20} tintColor={colors.secondaryLabel as string} />
+    <View style={[box, { alignItems: 'center', justifyContent: 'center' }]}>
+      <FileText size={18} strokeWidth={1.5} color={hex.mutedForeground} />
     </View>
   );
 }
@@ -22,7 +31,7 @@ export function CaptureThumb({ capture, size = 40 }: { capture: Capture; size?: 
 function status(c: Capture): string {
   switch (c.state) {
     case 'queued':
-      return c.error ? 'Waiting to retry · ' + c.error : 'Waiting to upload';
+      return c.error ? `Waiting to retry · ${c.error}` : 'Waiting to upload';
     case 'uploading':
       return 'Uploading…';
     case 'attaching':
@@ -30,21 +39,19 @@ function status(c: Capture): string {
     case 'failed':
       return c.error ?? 'Failed';
     case 'done':
-      return c.transaction ? `Archived and attached · ${formatRelative(c.attachedAt ?? c.createdAt)}` : 'Archived · not matched yet';
+      return c.transaction ? `Attached ${formatRelative(c.attachedAt ?? c.createdAt)}` : 'Archived · tap to match a payment';
   }
 }
 
 export function CaptureRow({ capture: c, onPress, last }: { capture: Capture; onPress?: () => void; last?: boolean }) {
-  const busy = c.state === 'uploading' || c.state === 'attaching';
   return (
     <Row
       leading={<CaptureThumb capture={c} />}
       title={c.transaction ? c.transaction.label : c.fileName}
-      subtitle={status(c)}
+      meta={status(c)}
       value={c.transaction ? formatMoney(c.transaction.amount, c.transaction.currency) : undefined}
-      valueTone="secondary"
+      valueTone={c.state === 'failed' ? 'negative' : 'muted'}
       onPress={onPress}
-      chevron={!busy && !!onPress}
       last={last}
     />
   );

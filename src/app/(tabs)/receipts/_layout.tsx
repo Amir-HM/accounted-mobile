@@ -1,16 +1,8 @@
 import { Stack } from 'expo-router';
 
-export default function ReceiptsStack() {
-  return (
-    <Stack
-      screenOptions={{
-        headerTransparent: true,
-        headerLargeTitle: true,
-        headerLargeTitleShadowVisible: false,
-        headerShadowVisible: false,
-      }}>
-      <Stack.Screen name="index" options={{ title: 'Receipts' }} />
-      <Stack.Screen name="[id]" options={{ title: '', headerLargeTitle: false }} />
-    </Stack>
-  );
+import { colors } from '@/lib/theme';
+
+// Pages draw their own 48px top bar (TopBar); the native stack keeps the edge-swipe back.
+export default function TabStack() {
+  return <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }} />;
 }

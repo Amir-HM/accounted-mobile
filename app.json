@@ -57,7 +57,8 @@
           "cameraPermission": "Accounted uses the camera to scan receipts.",
           "microphonePermission": false
         }
-      ]
+      ],
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true,

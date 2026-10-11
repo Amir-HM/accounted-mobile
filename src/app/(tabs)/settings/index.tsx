@@ -1,13 +1,14 @@
 import Constants from 'expo-constants';
 import * as WebBrowser from 'expo-web-browser';
-import { ActionSheetIOS, Alert, ScrollView } from 'react-native';
+import { ActionSheetIOS, Alert, ScrollView, Text, View } from 'react-native';
 
-import { Row, Section } from '@/components/ui';
+import { Row, SectionLabel, TopBar } from '@/components/ui';
 import { clearConnection, useConnection } from '@/lib/connection';
 import { LOOKBACK_OPTIONS, lookbackLabel, queryClient, setLookbackDays, useLookbackDays } from '@/lib/queries';
 import { pendingCount, useCaptures } from '@/lib/queue';
-import { colors, space } from '@/lib/theme';
+import { colors, space, type } from '@/lib/theme';
 
+/** Settings speak "Fönster": flat hairline rows, uppercase section labels, no cards. */
 export default function Settings() {
   const conn = useConnection();
   const captures = useCaptures();
@@ -20,7 +21,7 @@ export default function Settings() {
       'Disconnect this iPhone?',
       waiting
         ? `${waiting} receipt${waiting === 1 ? ' has' : 's have'} not finished uploading and will wait until you connect again.`
-        : 'The API key is removed from this iPhone. Revoke it in Accounted on the web if you no longer need it.',
+        : 'This iPhone forgets its access. Revoke it in Accounted on the web under Settings → API keys if you no longer need it.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -36,22 +37,19 @@ export default function Settings() {
   }
 
   return (
-    <ScrollView
-      contentInsetAdjustmentBehavior="automatic"
-      style={{ backgroundColor: colors.background }}
-      contentContainerStyle={{ padding: space(4), gap: space(6), paddingBottom: space(10) }}>
-      <Section title="Connected to" footer="The API key is stored in this iPhone’s Keychain.">
-        <Row title={conn.companyName} subtitle={new URL(conn.serverUrl).host} />
-        <Row title="API key" value={`${conn.apiKey.slice(0, 11)}…`} valueTone="secondary" />
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <TopBar title="Settings" />
+      <ScrollView contentContainerStyle={{ paddingHorizontal: space(4), paddingBottom: space(12) }}>
+        <SectionLabel>Company</SectionLabel>
+        <Row title={conn.companyName} meta={new URL(conn.serverUrl).host} />
+        <Row title="Access" value={`${conn.apiKey.slice(0, 11)}…`} valueTone="muted" />
         <Row title="Open Accounted" onPress={() => WebBrowser.openBrowserAsync(conn.serverUrl)} last />
-      </Section>
 
-      <Section title="Missing receipts" footer="How far back to look for payments without a receipt.">
+        <SectionLabel>Receipts</SectionLabel>
         <Row
-          title="Show payments from"
+          title="Look for missing receipts"
           value={lookbackLabel(days)}
-          valueTone="secondary"
-          last
+          valueTone="muted"
           onPress={() =>
             ActionSheetIOS.showActionSheetWithOptions(
               { options: [...LOOKBACK_OPTIONS.map(lookbackLabel), 'Cancel'], cancelButtonIndex: LOOKBACK_OPTIONS.length },
@@ -59,16 +57,16 @@ export default function Settings() {
             )
           }
         />
-      </Section>
+        <Row title="Waiting to upload" value={String(waiting)} valueTone="muted" />
+        <Row title="Kept on this iPhone" value={`${captures.filter((c) => c.state === 'done').length} · 30 days`} valueTone="muted" last />
 
-      <Section title="Receipts on this iPhone" footer="Copies are kept for 30 days after they are safely archived on the server.">
-        <Row title="Waiting to upload" value={String(waiting)} valueTone="secondary" />
-        <Row title="Archived in the last 30 days" value={String(captures.filter((c) => c.state === 'done').length)} valueTone="secondary" last />
-      </Section>
-
-      <Section footer={`Accounted Mobile ${Constants.expoConfig?.version ?? ''} · MIT licensed · not affiliated with the Accounted project.`}>
+        <SectionLabel>This iPhone</SectionLabel>
         <Row title="Disconnect" destructive onPress={disconnect} chevron={false} last />
-      </Section>
-    </ScrollView>
+
+        <Text style={[type.meta, { paddingTop: space(8), textAlign: 'center' }]}>
+          {`Accounted Mobile ${Constants.expoConfig?.version ?? ''} · MIT · not affiliated with the Accounted project`}
+        </Text>
+      </ScrollView>
+    </View>
   );
 }
