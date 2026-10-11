@@ -14,6 +14,7 @@ import { queryClient, setNoReceiptNeeded } from '@/lib/queries';
 import { reportActionError } from '@/lib/scope';
 import { showToast } from '@/lib/toast';
 import { colors, fonts, space, type, useHex } from '@/lib/theme';
+import { merchantName, promptMerchantName, useMerchantNames } from '@/lib/merchants';
 
 const ACTION_W = 84;
 
@@ -82,23 +83,25 @@ export async function captureFor(tx: Transaction, method: CaptureMethod) {
 
 /** A missing-receipt row: tap opens the payment, swipe left for Scan / No receipt, long-press for everything. */
 export function SwipeTxRow({ tx, last }: { tx: Transaction; last: boolean }) {
+  const own = useMerchantNames();
   const ref = useRef<SwipeableMethods>(null);
   const hex = useHex();
-  const name = tidyMerchant(tx.merchant_name ?? tx.description);
+  const name = merchantName(tx.merchant_name ?? tx.description, own);
 
   function menu() {
     Haptics.selectionAsync();
     ActionSheetIOS.showActionSheetWithOptions(
       {
         title: `${name} · ${formatMoney(tx.amount, tx.currency)}`,
-        options: ['Scan receipt', 'Choose photo', 'Choose file', 'No receipt needed', 'Cancel'],
-        cancelButtonIndex: 4,
+        options: ['Scan receipt', 'Choose photo', 'Choose file', 'No receipt needed', 'Rename merchant', 'Cancel'],
+        cancelButtonIndex: 5,
       },
       (i) => {
         if (i === 0) void captureFor(tx, 'scan');
         if (i === 1) void captureFor(tx, 'photo');
         if (i === 2) void captureFor(tx, 'file');
         if (i === 3) hideWithUndo(tx);
+        if (i === 4) promptMerchantName(tx.merchant_name ?? tx.description, name);
       },
     );
   }

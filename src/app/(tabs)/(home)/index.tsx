@@ -178,7 +178,7 @@ export default function Overview() {
             </Reveal>
 
             <Reveal index={4} style={{ paddingTop: space(8) }}>
-              <MonthBars months={monthsSoFar(k)} start={k.period.start} yearLabel={fy} />
+              <MonthBars months={monthsSoFar(k)} start={kpi.data!.period.period_start} yearLabel={fy} />
             </Reveal>
           </>
         ) : kpi.isPending ? (

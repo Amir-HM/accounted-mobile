@@ -113,9 +113,12 @@ export function Button({
   busy,
   disabled,
   style,
+  accessibilityLabel,
 }: {
   title?: string;
   icon?: LucideIcon;
+  /** For icon-only buttons. */
+  accessibilityLabel?: string;
   onPress: () => void;
   variant?: 'primary' | 'outline' | 'link';
   size?: 'lg' | 'sm';
@@ -135,7 +138,7 @@ export function Button({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={title}
+      accessibilityLabel={accessibilityLabel ?? title}
       disabled={disabled || busy}
       onPressIn={() => Haptics.selectionAsync()}
       onPress={onPress}

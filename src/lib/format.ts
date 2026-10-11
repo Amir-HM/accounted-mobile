@@ -1,3 +1,5 @@
+import { ownMerchantName } from './merchants';
+
 const money = new Map<string, Intl.NumberFormat>();
 
 /** 1 234,56 kr / 20,04 US$: Swedish grouping, the currency's own symbol. */
@@ -78,6 +80,8 @@ function titleCase(s: string) {
 }
 
 export function tidyMerchant(raw: string | null | undefined): string {
+  const own = ownMerchantName(raw);
+  if (own) return own;
   let s = (raw ?? '').replace(/\s+/g, ' ').trim();
   if (!s) return 'Unknown';
   for (const [re, name] of KNOWN) {

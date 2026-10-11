@@ -5,12 +5,14 @@ import { Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native'
 
 import { Skeleton } from '@/components/motion';
 import { Attn, EmptyState, TopBar } from '@/components/ui';
-import { formatMoney, tidyMerchant } from '@/lib/format';
+import { formatMoney } from '@/lib/format';
 import { useToBook } from '@/lib/queries';
 import { colors, fonts, space, type } from '@/lib/theme';
+import { merchantName, useMerchantNames } from '@/lib/merchants';
 
 /** Bank transactions not booked yet; tap one to book it. */
 export default function ToBook() {
+  const own = useMerchantNames();
   const q = useToBook();
   const rows = q.data ?? [];
   return (
@@ -47,7 +49,7 @@ export default function ToBook() {
             style={({ pressed }) => [st.row, index < rows.length - 1 && st.divider, pressed && { backgroundColor: colors.muted }]}>
             <Text style={st.date}>{t.date.slice(0, 10)}</Text>
             <Text style={[type.body, { flex: 1 }]} numberOfLines={1}>
-              {tidyMerchant(t.merchant_name ?? t.description)}
+              {merchantName(t.merchant_name ?? t.description, own)}
             </Text>
             <Text style={[st.amount, t.amount > 0 && { color: colors.success }]}>{formatMoney(t.amount, t.currency)}</Text>
           </Pressable>

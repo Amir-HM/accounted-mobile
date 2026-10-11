@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Image as ImageIcon, ScanLine } from 'lucide-react-native';
+import { Image as ImageIcon, Pencil, ScanLine } from 'lucide-react-native';
 import { useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 
@@ -13,11 +13,13 @@ import { nameAccount, useLedgerNames, useNicknames } from '@/lib/accounts';
 import { getTransaction, type Transaction } from '@/lib/api';
 import { captureAndQueue, type CaptureMethod } from '@/lib/capture';
 import { useConnection } from '@/lib/connection';
-import { formatMoney, tidyMerchant } from '@/lib/format';
+import { formatMoney } from '@/lib/format';
 import { queryClient, useCashAccounts } from '@/lib/queries';
 import { colors, space, type } from '@/lib/theme';
+import { merchantName, promptMerchantName, useMerchantNames } from '@/lib/merchants';
 
 export default function PaymentScreen() {
+  const own = useMerchantNames();
   const { id } = useLocalSearchParams<{ id: string }>();
   const conn = useConnection();
   const accounts = useCashAccounts();
@@ -37,7 +39,7 @@ export default function PaymentScreen() {
   const raw = accounts.data?.find((a) => a.cash_account_id === t?.cash_account_id);
   const account = raw ? nameAccount(raw, ledger.data, nicks) : undefined;
   const original = (t?.merchant_name ?? t?.description ?? '').trim();
-  const name = tidyMerchant(original);
+  const name = merchantName(original, own);
 
   async function capture(method: CaptureMethod) {
     if (!t) return;
@@ -63,7 +65,11 @@ export default function PaymentScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <TopBar title="Payment" back />
+      <TopBar
+        title="Payment"
+        back
+        right={original ? <Button size="sm" variant="outline" icon={Pencil} accessibilityLabel="Rename merchant" onPress={() => promptMerchantName(original, name)} /> : null}
+      />
       {!t ? (
         tx.error ? (
           <View style={{ padding: space(4) }}>

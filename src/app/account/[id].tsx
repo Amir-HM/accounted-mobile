@@ -10,16 +10,18 @@ import { Attn, Button, Row, SectionLabel, TopBar } from '@/components/ui';
 import { nameAccount, setNickname, useLedgerNames, useNicknames } from '@/lib/accounts';
 import { listTransactionsSince, type TransactionRow } from '@/lib/api';
 import { useConnection } from '@/lib/connection';
-import { formatMoney, formatRelative, maskIban, tidyMerchant } from '@/lib/format';
+import { formatMoney, formatRelative, maskIban } from '@/lib/format';
 import { useCashAccounts, useMissingReceipts } from '@/lib/queries';
 import { showToast } from '@/lib/toast';
 import { colors, fonts, radius, space, type, useHex } from '@/lib/theme';
+import { merchantName, useMerchantNames } from '@/lib/merchants';
 
 const monthFmt = new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric' });
 const STEP_DAYS = 90;
 
 /** One bank account: balance, facts, this month in/out, and its transactions by month. */
 export default function AccountScreen() {
+  const own = useMerchantNames();
   const { id } = useLocalSearchParams<{ id: string }>();
   const conn = useConnection();
   const hex = useHex();
@@ -92,7 +94,7 @@ export default function AccountScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <TopBar title={a?.title ?? 'Account'} back right={a ? <Button size="sm" variant="outline" icon={Pencil} onPress={rename} /> : null} />
+      <TopBar title={a?.title ?? 'Account'} back right={a ? <Button size="sm" variant="outline" icon={Pencil} accessibilityLabel="Rename account" onPress={rename} /> : null} />
       {!a ? null : (
         <ScrollView contentContainerStyle={{ paddingHorizontal: space(4), paddingBottom: space(12) }}>
           <Reveal index={0} style={{ paddingTop: space(8), gap: space(2) }}>
@@ -156,7 +158,7 @@ export default function AccountScreen() {
                       style={({ pressed }) => [st.tx, i < g.items.length - 1 && st.divider, pressed && { backgroundColor: colors.muted }]}>
                       <Text style={st.day}>{t.date.slice(8, 10)}</Text>
                       <Text style={[type.body, { flex: 1 }]} numberOfLines={1}>
-                        {tidyMerchant(t.merchant_name ?? t.description)}
+                        {merchantName(t.merchant_name ?? t.description, own)}
                       </Text>
                       {missingIds.has(t.id) ? <FileWarning size={15} strokeWidth={1.5} color={hex.attn} /> : null}
                       <Text style={[st.amount, t.amount > 0 && { color: colors.success }]}>{formatMoney(t.amount, t.currency)}</Text>

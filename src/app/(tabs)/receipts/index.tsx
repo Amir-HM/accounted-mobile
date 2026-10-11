@@ -11,7 +11,7 @@ import { Skeleton } from '@/components/motion';
 import { Attn, Button, EmptyState, SectionLabel, Segmented, TopBar } from '@/components/ui';
 import type { Transaction } from '@/lib/api';
 import { captureUnlinked } from '@/lib/capture';
-import { formatMoney, tidyMerchant } from '@/lib/format';
+import { formatMoney } from '@/lib/format';
 import { useHiddenIds, useMissingReceipts } from '@/lib/queries';
 import { useCaptures, type Capture } from '@/lib/queue';
 import { colors, fonts, space, type } from '@/lib/theme';
