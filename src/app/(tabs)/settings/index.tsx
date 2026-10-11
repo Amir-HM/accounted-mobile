@@ -67,7 +67,7 @@ export default function Settings() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <TopBar title="Settings" />
-      <ScrollView contentContainerStyle={{ paddingHorizontal: space(4), paddingBottom: space(12) }}>
+      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ paddingHorizontal: space(4), paddingBottom: space(12) }}>
         <SectionLabel>Company</SectionLabel>
         <Row title={conn.companyName} meta={new URL(conn.serverUrl).host} />
         <Row title="Open Accounted on the web" onPress={() => WebBrowser.openBrowserAsync(conn.serverUrl)} last />

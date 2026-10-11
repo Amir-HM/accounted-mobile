@@ -10,11 +10,11 @@ import { Attn, Button, Row, SectionLabel, TopBar } from '@/components/ui';
 import { nameAccount, setNickname, useLedgerNames, useNicknames } from '@/lib/accounts';
 import { listTransactionsSince, type TransactionRow } from '@/lib/api';
 import { useConnection } from '@/lib/connection';
-import { formatMoney, formatRelative, maskIban } from '@/lib/format';
+import { formatMoney, formatRelative, maskIban, merchantName } from '@/lib/format';
 import { useCashAccounts, useMissingReceipts } from '@/lib/queries';
 import { showToast } from '@/lib/toast';
 import { colors, fonts, radius, space, type, useHex } from '@/lib/theme';
-import { merchantName, useMerchantNames } from '@/lib/merchants';
+import { useMerchantNames } from '@/lib/merchants';
 
 const monthFmt = new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric' });
 const STEP_DAYS = 90;

@@ -82,6 +82,7 @@ export default function Overview() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: insets.top }}>
       <ScrollView
+        contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={{ paddingHorizontal: space(4), paddingBottom: space(12) }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}
       >

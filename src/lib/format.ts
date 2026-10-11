@@ -1,4 +1,4 @@
-import { ownMerchantName } from './merchants';
+import { merchantKey, ownMerchantName } from './merchants';
 
 const money = new Map<string, Intl.NumberFormat>();
 
@@ -107,4 +107,13 @@ export function tidyMerchant(raw: string | null | undefined): string {
 export function maskIban(iban: string | null | undefined): string | null {
   const s = (iban ?? '').replace(/\s/g, '');
   return s.length > 8 ? `${s.slice(0, 4)} •••• ${s.slice(-4)}` : null;
+}
+
+/**
+ * The display name for a bank text, given the current renames. Taking the
+ * renames as an argument (from useMerchantNames) keeps memoised screens in
+ * step when a name changes.
+ */
+export function merchantName(raw: string | null | undefined, own: Record<string, string>): string {
+  return own[merchantKey(raw)] ?? tidyMerchant(raw);
 }

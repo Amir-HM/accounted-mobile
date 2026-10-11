@@ -7,14 +7,14 @@ import ReanimatedSwipeable, { type SwipeableMethods } from 'react-native-gesture
 
 import type { Transaction } from '@/lib/api';
 import { captureAndQueue, type CaptureMethod } from '@/lib/capture';
-import { formatMoney, tidyMerchant } from '@/lib/format';
+import { formatMoney, merchantName, tidyMerchant } from '@/lib/format';
 import { markNoDocumentRequired, unmarkNoDocumentRequired } from '@/lib/api';
 import { loadConnection } from '@/lib/connection';
 import { queryClient, setNoReceiptNeeded } from '@/lib/queries';
 import { reportActionError } from '@/lib/scope';
 import { showToast } from '@/lib/toast';
 import { colors, fonts, space, type, useHex } from '@/lib/theme';
-import { merchantName, promptMerchantName, useMerchantNames } from '@/lib/merchants';
+import { promptMerchantName, useMerchantNames } from '@/lib/merchants';
 
 const ACTION_W = 84;
 

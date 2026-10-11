@@ -9,14 +9,14 @@ import { Reveal, Skeleton } from '@/components/motion';
 import { Attn, Button, Row, SectionLabel, TopBar } from '@/components/ui';
 import { categorize, getTransaction, previewCategorize, type CategorizeArgs } from '@/lib/api';
 import { useConnection } from '@/lib/connection';
-import { formatMoney } from '@/lib/format';
+import { formatMoney, merchantName } from '@/lib/format';
 import { usePref } from '@/lib/prefs';
 import { queryClient, useSuggestions } from '@/lib/queries';
 import { useCaptures } from '@/lib/queue';
 import { reportActionError } from '@/lib/scope';
 import { showToast } from '@/lib/toast';
 import { colors, radius, space, type, useHex } from '@/lib/theme';
-import { merchantName, useMerchantNames } from '@/lib/merchants';
+import { useMerchantNames } from '@/lib/merchants';
 
 type Vat = NonNullable<CategorizeArgs['vat_treatment']>;
 

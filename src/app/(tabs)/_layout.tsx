@@ -1,15 +1,18 @@
 import * as Notifications from 'expo-notifications';
-import { Tabs } from 'expo-router';
+import { NativeTabs } from 'expo-router/unstable-native-tabs';
 import { useEffect } from 'react';
-import { House, ReceiptText, Settings, type LucideIcon } from 'lucide-react-native';
-import { StyleSheet, Text, View, type ColorValue } from 'react-native';
 
 import { useHiddenIds, useMissingReceipts } from '@/lib/queries';
 import { usePushEnabled } from '@/lib/push';
 import { useCaptures } from '@/lib/queue';
-import { colors, fonts, radius, useHex } from '@/lib/theme';
+import { fonts, useHex } from '@/lib/theme';
 
-/** The web's mobile bottom nav: paper surface, hairline top, line icons, black count badge. */
+/**
+ * The system tab bar: Liquid Glass on iOS 26, minimising while you scroll.
+ * Navigation is platform chrome, so it is native; the content inside stays
+ * Accounted's flat paper and hairlines. Ink for the selected tab, the same
+ * black count badge as the web.
+ */
 export default function TabsLayout() {
   const hex = useHex();
   const missing = useMissingReceipts();
@@ -25,59 +28,29 @@ export default function TabsLayout() {
   }, [count, push, missing.isPending]);
 
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        animation: 'none',
-        tabBarActiveTintColor: hex.foreground,
-        tabBarInactiveTintColor: hex.mutedForeground,
-        tabBarStyle: { backgroundColor: hex.background, borderTopColor: hex.border, borderTopWidth: StyleSheet.hairlineWidth },
-        tabBarIconStyle: { width: 56 },
-        tabBarBadgeStyle: { backgroundColor: hex.foreground, color: hex.background, fontFamily: fonts.medium, fontSize: 11 },
+    <NativeTabs
+      minimizeBehavior="onScrollDown"
+      tintColor={hex.foreground}
+      iconColor={{ default: hex.mutedForeground, selected: hex.foreground }}
+      badgeBackgroundColor={hex.foreground}
+      labelStyle={{
+        default: { fontFamily: fonts.body, fontSize: 11, color: hex.mutedForeground },
+        selected: { fontFamily: fonts.medium, fontSize: 11, color: hex.foreground },
       }}
     >
-      <Tabs.Screen
-        name="(home)"
-        options={{ title: 'Overview', tabBarLabel: label('Overview'), tabBarIcon: icon(House) }}
-      />
-      <Tabs.Screen
-        name="receipts"
-        options={{
-          title: 'Receipts',
-          tabBarLabel: label('Receipts'),
-          tabBarBadge: count > 0 ? (count > 99 ? '99+' : count) : undefined,
-          tabBarIcon: icon(ReceiptText),
-        }}
-      />
-      <Tabs.Screen
-        name="settings"
-        options={{ title: 'Settings', tabBarLabel: label('Settings'), tabBarIcon: icon(Settings) }}
-      />
-    </Tabs>
+      <NativeTabs.Trigger name="(home)">
+        <NativeTabs.Trigger.Icon sf={{ default: 'house', selected: 'house.fill' }} />
+        <NativeTabs.Trigger.Label>Overview</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="receipts">
+        <NativeTabs.Trigger.Icon sf={{ default: 'receipt', selected: 'receipt.fill' }} />
+        <NativeTabs.Trigger.Label>Receipts</NativeTabs.Trigger.Label>
+        {count > 0 ? <NativeTabs.Trigger.Badge>{count > 99 ? '99+' : String(count)}</NativeTabs.Trigger.Badge> : null}
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="settings">
+        <NativeTabs.Trigger.Icon sf={{ default: 'gearshape', selected: 'gearshape.fill' }} />
+        <NativeTabs.Trigger.Label>Settings</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
+    </NativeTabs>
   );
 }
-
-/** The web nav's active state: a tinted pill behind the icon, a firmer stroke and a medium label. */
-function icon(Icon: LucideIcon) {
-  function TabIcon({ color, focused }: { color: ColorValue; focused: boolean }) {
-    return (
-      <View style={[st.pill, focused && st.pillOn]}>
-        <Icon size={22} strokeWidth={focused ? 2 : 1.5} color={color as string} />
-      </View>
-    );
-  }
-  return TabIcon;
-}
-
-function label(text: string) {
-  function TabLabel({ color, focused }: { color: ColorValue; focused: boolean }) {
-    return <Text style={[st.label, { color }, focused && { fontFamily: fonts.medium }]}>{text}</Text>;
-  }
-  return TabLabel;
-}
-
-const st = StyleSheet.create({
-  pill: { width: 56, height: 30, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
-  pillOn: { backgroundColor: colors.muted },
-  label: { fontFamily: fonts.body, fontSize: 12, marginTop: 2 },
-});

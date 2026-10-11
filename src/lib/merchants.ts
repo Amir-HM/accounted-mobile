@@ -3,8 +3,6 @@ import Storage from 'expo-sqlite/kv-store';
 import { useSyncExternalStore } from 'react';
 import { Alert } from 'react-native';
 
-import { tidyMerchant } from './format';
-
 /**
  * Names you give a merchant on this iPhone. They apply to every payment with
  * the same bank text, ignoring the numbers banks put in it (invoice numbers,
@@ -32,15 +30,6 @@ export function setMerchantName(raw: string | null | undefined, name: string | n
   names = next;
   Storage.setItemSync(KEY, JSON.stringify(names));
   listeners.forEach((l) => l());
-}
-
-/**
- * The display name for a bank text, given the current renames. Taking the
- * renames as an argument (from useMerchantNames) keeps memoised screens in
- * step when a name changes.
- */
-export function merchantName(raw: string | null | undefined, own: Record<string, string>): string {
-  return own[merchantKey(raw)] ?? tidyMerchant(raw);
 }
 
 /** Subscribe a screen to renames, so names update everywhere at once. */

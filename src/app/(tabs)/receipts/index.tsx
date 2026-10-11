@@ -11,7 +11,6 @@ import { Skeleton } from '@/components/motion';
 import { Attn, Button, EmptyState, SectionLabel, Segmented, TopBar } from '@/components/ui';
 import type { Transaction } from '@/lib/api';
 import { captureUnlinked } from '@/lib/capture';
-import { formatMoney } from '@/lib/format';
 import { useHiddenIds, useMissingReceipts } from '@/lib/queries';
 import { useCaptures, type Capture } from '@/lib/queue';
 import { colors, fonts, space, type } from '@/lib/theme';
@@ -78,6 +77,7 @@ export default function Receipts() {
       <FlashList
         ref={list}
         data={items}
+        contentInsetAdjustmentBehavior="automatic"
         keyExtractor={(i) => i.key}
         getItemType={(i) => i.kind}
         contentContainerStyle={{ paddingHorizontal: space(4), paddingBottom: space(12) }}
