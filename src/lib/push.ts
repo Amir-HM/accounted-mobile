@@ -4,6 +4,7 @@ import * as Notifications from 'expo-notifications';
 
 import type { Connection } from './connection';
 import { deviceStore, stringCodec } from './device-store';
+import { getLang, tr } from './i18n';
 import { getPref } from './prefs';
 
 /**
@@ -24,17 +25,24 @@ async function relay(path: '/register' | '/unregister', conn: Connection, t: str
     method: 'POST',
     headers: { Authorization: `Bearer ${conn.apiKey}`, 'Content-Type': 'application/json' },
     // private: the relay leaves merchant and amount out of what the lock screen shows.
-    body: JSON.stringify({ token: t, private: getPref('privatePush') }),
+    // lang: the relay writes the notification in the app's language.
+    body: JSON.stringify({ token: t, private: getPref('privatePush'), lang: getLang() }),
   });
-  if (!r.ok) throw new Error(r.status === 401 ? 'The notification service did not accept this account.' : `Could not reach the notification service (${r.status}).`);
+  if (!r.ok) {
+    throw new Error(
+      r.status === 401
+        ? tr('The notification service did not accept this account.')
+        : tr('Could not reach the notification service ({status}).', { status: r.status }),
+    );
+  }
 }
 
 export async function enablePush(conn: Connection): Promise<void> {
-  if (!PUSH_RELAY) throw new Error('This build has no notification relay configured.');
-  if (!Device.isDevice) throw new Error('Notifications need a real iPhone, not the simulator.');
+  if (!PUSH_RELAY) throw new Error(tr('This build has no notification relay configured.'));
+  if (!Device.isDevice) throw new Error(tr('Notifications need a real iPhone, not the simulator.'));
   const current = await Notifications.getPermissionsAsync();
   const granted = current.granted || (await Notifications.requestPermissionsAsync()).granted;
-  if (!granted) throw new Error('Notifications are off for this app. Turn them on in iPhone Settings.');
+  if (!granted) throw new Error(tr('Notifications are off for this app. Turn them on in iPhone Settings.'));
   const projectId = Constants.expoConfig?.extra?.eas?.projectId as string | undefined;
   const { data } = await Notifications.getExpoPushTokenAsync({ projectId });
   await relay('/register', conn, data);
@@ -64,4 +72,13 @@ export async function refreshPushRegistration(conn: Connection): Promise<void> {
 export async function updatePushPrivacy(conn: Connection): Promise<void> {
   const t = token.get();
   if (t && PUSH_RELAY) await relay('/register', conn, t);
+}
+
+/**
+ * Re-register with the new language, if notifications are on. A failure is
+ * not worth an alert: the next launch registers again with the language.
+ */
+export async function updatePushLanguage(conn: Connection): Promise<void> {
+  const t = token.get();
+  if (t && PUSH_RELAY) await relay('/register', conn, t).catch(() => {});
 }

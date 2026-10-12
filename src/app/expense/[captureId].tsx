@@ -9,6 +9,7 @@ import { CaptureThumb } from '@/components/capture-row';
 import { useConnection } from '@/lib/connection';
 import { deviceStore } from '@/lib/device-store';
 import { formatMoney, localDate } from '@/lib/format';
+import { useT } from '@/lib/i18n';
 import { stageExpenseClaim } from '@/lib/mcp';
 import { usePref } from '@/lib/prefs';
 import { queryClient, useCostAccounts } from '@/lib/queries';
@@ -31,6 +32,7 @@ const num = (s: string) => Number(s.replace(/\s/g, '').replace(',', '.'));
  */
 export default function ExpenseClaim() {
   const { captureId } = useLocalSearchParams<{ captureId: string }>();
+  const t = useT();
   const conn = useConnection();
   const hex = useHex();
   const enabled = usePref('bookInAccounted');
@@ -49,7 +51,7 @@ export default function ExpenseClaim() {
   const [search, setSearch] = useState('');
   const [busy, setBusy] = useState(false);
 
-  if (!c) return <View style={{ flex: 1, backgroundColor: colors.background }}><TopBar title="Paid privately" back /></View>;
+  if (!c) return <View style={{ flex: 1, backgroundColor: colors.background }}><TopBar title={t('Paid privately')} back /></View>;
 
   const chosen = accounts.data?.find((a) => a.number === account);
   const q = search.trim().toLowerCase();
@@ -57,17 +59,17 @@ export default function ExpenseClaim() {
   const total = num(amount);
   const vatN = currency === 'SEK' ? num(vat || '0') : 0;
   const problem = !description.trim()
-    ? 'Describe the purchase.'
+    ? t('Describe the purchase.')
     : !/^\d{4}-\d{2}-\d{2}$/.test(date)
-      ? 'Write the date as YYYY-MM-DD.'
+      ? t('Write the date as YYYY-MM-DD.')
       : !(total > 0)
-        ? 'Enter the amount paid.'
+        ? t('Enter the amount paid.')
         : !(vatN >= 0 && vatN < total)
-          ? 'The VAT must be less than the amount.'
+          ? t('The VAT must be less than the amount.')
           : !chosen
-            ? 'Choose a cost account.'
+            ? t('Choose a cost account.')
             : !claimant.trim()
-              ? 'Who paid?'
+              ? t('Who paid?')
               : null;
 
   async function submit() {
@@ -89,11 +91,11 @@ export default function ExpenseClaim() {
       lastClaimant.set(claimant.trim());
       lastAccount.set(chosen.number);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      showToast('Waiting for your approval');
+      showToast(t('Waiting for your approval'));
       void queryClient.invalidateQueries({ queryKey: ['pending-ops'] });
       router.replace('/approvals');
     } catch (e) {
-      reportActionError(e, 'The expense claim');
+      reportActionError(e, t('The expense claim'));
     } finally {
       setBusy(false);
     }
@@ -101,52 +103,52 @@ export default function ExpenseClaim() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <TopBar title="Paid privately" back />
+      <TopBar title={t('Paid privately')} back />
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: space(4), paddingBottom: space(12) }}>
         <Reveal index={0} style={{ paddingTop: space(6), flexDirection: 'row', gap: space(3), alignItems: 'center' }}>
           <CaptureThumb capture={c} size={48} />
           <Text style={[type.lead, { flex: 1 }]}>
-            The company owes this back to whoever paid. It is booked as an expense claim when you approve it.
+            {t('The company owes this back to whoever paid. It is booked as an expense claim when you approve it.')}
           </Text>
         </Reveal>
 
         {c.claimedAt ? (
           <View style={{ paddingTop: space(4) }}>
-            <Attn>This receipt was already sent as an expense claim. Find it in Approvals, or in Accounted on the web.</Attn>
+            <Attn>{t('This receipt was already sent as an expense claim. Find it in Approvals, or in Accounted on the web.')}</Attn>
           </View>
         ) : null}
         {!enabled ? (
           <View style={{ paddingTop: space(4) }}>
-            <Attn>Booking from the phone is off. Turn it on in Settings → Booking when Accounted is where you book.</Attn>
+            <Attn>{t('Booking from the phone is off. Turn it on in Settings → Booking when Accounted is where you book.')}</Attn>
           </View>
         ) : null}
 
-        <SectionLabel>Purchase</SectionLabel>
-        <Field label="What was bought">
-          <TextInput style={st.input} value={description} onChangeText={setDescription} placeholder="USB hub" placeholderTextColor={hex.mutedForeground} />
+        <SectionLabel>{t('Purchase')}</SectionLabel>
+        <Field label={t('What was bought')}>
+          <TextInput style={st.input} value={description} onChangeText={setDescription} placeholder={t('USB hub')} placeholderTextColor={hex.mutedForeground} />
         </Field>
         <View style={{ flexDirection: 'row', gap: space(3) }}>
-          <Field label="Date" style={{ flex: 1 }}>
+          <Field label={t('Date')} style={{ flex: 1 }}>
             <TextInput style={st.input} value={date} onChangeText={setDate} placeholder="2026-10-11" placeholderTextColor={hex.mutedForeground} keyboardType="numbers-and-punctuation" />
           </Field>
-          <Field label={`Amount (${currency})`} style={{ flex: 1 }}>
+          <Field label={t('Amount ({currency})', { currency })} style={{ flex: 1 }}>
             <TextInput style={st.input} value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={hex.mutedForeground} />
           </Field>
         </View>
         {currency === 'SEK' ? (
-          <Field label="VAT in the amount">
+          <Field label={t('VAT in the amount')}>
             <TextInput style={st.input} value={vat} onChangeText={setVat} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={hex.mutedForeground} />
           </Field>
         ) : (
-          <Text style={[type.meta, { paddingBottom: space(3) }]}>Foreign VAT cannot be deducted in Sweden, so no VAT is claimed.</Text>
+          <Text style={[type.meta, { paddingBottom: space(3) }]}>{t('Foreign VAT cannot be deducted in Sweden, so no VAT is claimed.')}</Text>
         )}
 
-        <SectionLabel>Cost account</SectionLabel>
+        <SectionLabel>{t('Cost account')}</SectionLabel>
         {chosen ? (
           <Pressable onPress={() => setAccount('')} style={st.chosen}>
             <Text style={[type.bodyMedium, { fontVariant: ['tabular-nums'] }]}>{chosen.number}</Text>
             <Text style={[type.body, { flex: 1 }]} numberOfLines={1}>{chosen.name}</Text>
-            <Text style={type.meta}>Change</Text>
+            <Text style={type.meta}>{t('Change')}</Text>
           </Pressable>
         ) : (
           <View style={{ gap: space(2) }}>
@@ -154,7 +156,8 @@ export default function ExpenseClaim() {
               style={st.input}
               value={search}
               onChangeText={setSearch}
-              placeholder="Search: 5420, programvaror, resor…"
+              // The examples stay Swedish: they search the BAS account names, which are Swedish.
+              placeholder={t('Search: 5420, programvaror, resor…')}
               placeholderTextColor={hex.mutedForeground}
               autoCorrect={false}
             />
@@ -167,15 +170,15 @@ export default function ExpenseClaim() {
           </View>
         )}
 
-        <SectionLabel>Who paid</SectionLabel>
-        <Field label="Name">
-          <TextInput style={st.input} value={claimant} onChangeText={setClaimant} placeholder="Your name" placeholderTextColor={hex.mutedForeground} textContentType="name" />
+        <SectionLabel>{t('Who paid')}</SectionLabel>
+        <Field label={t('Name')}>
+          <TextInput style={st.input} value={claimant} onChangeText={setClaimant} placeholder={t('Your name')} placeholderTextColor={hex.mutedForeground} textContentType="name" />
         </Field>
 
         <View style={{ paddingTop: space(8), gap: space(3) }}>
           {problem && (description || amount) ? <Text style={type.meta}>{problem}</Text> : null}
           <Button
-            title={total > 0 ? `Send ${formatMoney(total, currency)} for approval` : 'Send for approval'}
+            title={total > 0 ? t('Send {amount} for approval', { amount: formatMoney(total, currency) }) : t('Send for approval')}
             onPress={submit}
             busy={busy}
             disabled={!enabled || !!problem || !!c.claimedAt}

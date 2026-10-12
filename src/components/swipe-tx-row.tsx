@@ -10,6 +10,7 @@ import { captureAndQueue, type CaptureMethod } from '@/lib/capture';
 import { formatMoney } from '@/lib/format';
 import { markNoDocumentRequired, unmarkNoDocumentRequired } from '@/lib/api';
 import { loadConnection } from '@/lib/connection';
+import { tr, useT } from '@/lib/i18n';
 import { setNoReceiptNeeded } from '@/lib/queries';
 import { reportActionError } from '@/lib/scope';
 import { showToast } from '@/lib/toast';
@@ -18,6 +19,7 @@ import { merchantName, promptMerchantName, useMerchantNames } from '@/lib/mercha
 
 const ACTION_W = 84;
 
+// label: shown in the app's language; reason: recorded on the verifikat, always Swedish.
 const REASONS = [
   { label: 'Transfer between own accounts', reason: 'Överföring mellan egna konton' },
   { label: 'Bank or card fee', reason: 'Bank- eller kortavgift utan separat underlag' },
@@ -37,12 +39,17 @@ export function hideWithUndo(tx: Pick<Transaction, 'id' | 'merchant_name' | 'des
   if (!tx.journal_entry_id || !conn) {
     setNoReceiptNeeded(tx.id, true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    showToast(`${name} hidden on this iPhone`, 'default', { label: 'Undo', onPress: () => setNoReceiptNeeded(tx.id, false) });
+    showToast(tr('{name} hidden on this iPhone', { name }), 'default', { label: tr('Undo'), onPress: () => setNoReceiptNeeded(tx.id, false) });
     return;
   }
   const je = tx.journal_entry_id;
   ActionSheetIOS.showActionSheetWithOptions(
-    { title: 'Why is there no receipt?', message: 'Recorded on the verifikat in Accounted.', options: [...REASONS.map((r) => r.label), 'Cancel'], cancelButtonIndex: REASONS.length },
+    {
+      title: tr('Why is there no receipt?'),
+      message: tr('Recorded on the verifikat in Accounted.'),
+      options: [...REASONS.map((r) => tr(r.label)), tr('Cancel')],
+      cancelButtonIndex: REASONS.length,
+    },
     async (i) => {
       if (i >= REASONS.length) return;
       // Hidden here at once, and kept in the cached list so Undo can bring it back without a refetch.
@@ -50,16 +57,16 @@ export function hideWithUndo(tx: Pick<Transaction, 'id' | 'merchant_name' | 'des
       try {
         await markNoDocumentRequired(conn, je, REASONS[i].reason);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        showToast(`${name}: no receipt needed`, 'default', {
-          label: 'Undo',
+        showToast(tr('{name}: no receipt needed', { name }), 'default', {
+          label: tr('Undo'),
           onPress: async () => {
             setNoReceiptNeeded(tx.id, false);
-            await unmarkNoDocumentRequired(conn, je).catch((e) => reportActionError(e, 'Undo'));
+            await unmarkNoDocumentRequired(conn, je).catch((e) => reportActionError(e, tr('Undoing')));
           },
         });
       } catch (e) {
         setNoReceiptNeeded(tx.id, false);
-        reportActionError(e, 'Marking it');
+        reportActionError(e, tr('Marking it'));
       }
     },
   );
@@ -76,7 +83,7 @@ export async function captureFor(tx: Transaction, method: CaptureMethod) {
     });
     if (c) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   } catch (e) {
-    Alert.alert('Could not add the receipt', e instanceof Error ? e.message : String(e));
+    Alert.alert(tr('Could not add the receipt'), e instanceof Error ? e.message : String(e));
   }
 }
 
@@ -85,14 +92,15 @@ export function SwipeTxRow({ tx, last }: { tx: Transaction; last: boolean }) {
   const own = useMerchantNames();
   const ref = useRef<SwipeableMethods>(null);
   const hex = useHex();
-  const name = merchantName(tx.merchant_name ?? tx.description, own);
+  const t = useT();
+  const name = merchantName(tx.merchant_name ?? tx.description, own, t.lang);
 
   function menu() {
     Haptics.selectionAsync();
     ActionSheetIOS.showActionSheetWithOptions(
       {
         title: `${name} · ${formatMoney(tx.amount, tx.currency)}`,
-        options: ['Scan receipt', 'Choose photo', 'Choose file', 'No receipt needed', 'Rename merchant', 'Cancel'],
+        options: [t('Scan receipt'), t('Choose photo'), t('Choose file'), t('No receipt needed'), t('Rename merchant'), t('Cancel')],
         cancelButtonIndex: 5,
       },
       (i) => {
@@ -115,24 +123,24 @@ export function SwipeTxRow({ tx, last }: { tx: Transaction; last: boolean }) {
       renderRightActions={() => (
         <View style={{ flexDirection: 'row', width: ACTION_W * 2 }}>
           <Pressable
-            accessibilityLabel="Scan receipt"
+            accessibilityLabel={t('Scan receipt')}
             onPress={() => {
               ref.current?.close();
               void captureFor(tx, 'scan');
             }}
             style={[st.action, { backgroundColor: colors.primary }]}>
             <ScanLine size={18} strokeWidth={1.5} color={hex.onPrimary} />
-            <Text style={[st.actionText, { color: colors.onPrimary }]}>Scan</Text>
+            <Text style={[st.actionText, { color: colors.onPrimary }]}>{t('Scan')}</Text>
           </Pressable>
           <Pressable
-            accessibilityLabel="No receipt needed"
+            accessibilityLabel={t('No receipt needed')}
             onPress={() => {
               ref.current?.close();
               hideWithUndo(tx);
             }}
             style={[st.action, { backgroundColor: colors.secondary }]}>
             <EyeOff size={18} strokeWidth={1.5} color={hex.foreground} />
-            <Text style={st.actionText}>No receipt</Text>
+            <Text style={st.actionText}>{t('No receipt')}</Text>
           </Pressable>
         </View>
       )}>

@@ -9,6 +9,7 @@ import { Attn, Button, EmptyState, TopBar } from '@/components/ui';
 import { ApiError, syncBankConnection, type BankConnection } from '@/lib/api';
 import { useConnection } from '@/lib/connection';
 import { formatDay, formatRelative } from '@/lib/format';
+import { useT } from '@/lib/i18n';
 import { bankNeedsAttention, queryClient, useBankConnections } from '@/lib/queries';
 import { reportActionError } from '@/lib/scope';
 import { showToast } from '@/lib/toast';
@@ -20,19 +21,20 @@ import { colors, radius, space, type, useHex } from '@/lib/theme';
  * needs BankID, so that opens Accounted on the web.
  */
 export default function Banks() {
+  const t = useT();
   const conn = useConnection();
   const q = useBankConnections();
   const [now] = useState(() => Date.now());
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <TopBar title="Bank connections" back />
+      <TopBar title={t('Bank connections')} back />
       <ScrollView
         contentContainerStyle={{ paddingHorizontal: space(4), paddingBottom: space(12), gap: space(3), paddingTop: space(6) }}
         refreshControl={<RefreshControl refreshing={q.isRefetching} onRefresh={() => q.refetch()} />}
       >
         {q.error ? (
-          <Attn action="Try again" onAction={() => q.refetch()}>
+          <Attn action={t('Try again')} onAction={() => q.refetch()}>
             {q.error.message}
           </Attn>
         ) : null}
@@ -45,10 +47,10 @@ export default function Banks() {
             </Reveal>
           ))
         ) : (
-          <EmptyState icon={Landmark} title="No bank connected" message="Connect a bank in Accounted on the web to bring in transactions." />
+          <EmptyState icon={Landmark} title={t('No bank connected')} message={t('Connect a bank in Accounted on the web to bring in transactions.')} />
         )}
         <Text style={[type.meta, { paddingTop: space(2) }]}>
-          Banks sync every night on their own and report with up to two days of delay, so today&apos;s card payments often arrive tomorrow.
+          {t('Banks sync every night on their own and report with up to two days of delay, so today’s card payments often arrive tomorrow.')}
         </Text>
       </ScrollView>
     </View>
@@ -56,6 +58,7 @@ export default function Banks() {
 }
 
 function BankCard({ bank: b, now, onRenew }: { bank: BankConnection; now: number; onRenew: () => void }) {
+  const t = useT();
   const conn = useConnection();
   const hex = useHex();
   const [busy, setBusy] = useState(false);
@@ -63,7 +66,7 @@ function BankCard({ bank: b, now, onRenew }: { bank: BankConnection; now: number
   const expiresIn = b.consent_expires ? Math.round((new Date(b.consent_expires).getTime() - now) / 86400_000) : null;
   const dead = b.status === 'expired';
   const settingUp = b.status === 'pending' || b.status === 'pending_selection';
-  const bank = b.bank ?? 'The bank';
+  const bank = b.bank ?? t('The bank');
 
   async function sync() {
     if (!conn) return;
@@ -71,16 +74,20 @@ function BankCard({ bank: b, now, onRenew }: { bank: BankConnection; now: number
     try {
       const r = await syncBankConnection(conn, b.connection_id);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      showToast(r.imported ? `${r.imported} new transaction${r.imported === 1 ? '' : 's'} from ${bank}` : `${bank} is up to date`);
+      showToast(
+        r.imported
+          ? t(r.imported === 1 ? '{n} new transaction from {bank}' : '{n} new transactions from {bank}', { n: r.imported, bank })
+          : t('{bank} is up to date', { bank }),
+      );
       // New transactions: the lists built from them refresh; nothing else changed.
       for (const key of ['bank-connections', 'cash-accounts', 'missing', 'to-book', 'kpi']) void queryClient.invalidateQueries({ queryKey: [key] });
     } catch (e) {
-      if (e instanceof ApiError && e.code === 'BANK_SYNC_COOLDOWN') showToast(`${bank} synced a moment ago. Try again in a few minutes.`);
-      else if (e instanceof ApiError && e.code === 'BANK_RATE_LIMITED') showToast(`${bank} allows only a few syncs a day. It will sync again tonight.`);
+      if (e instanceof ApiError && e.code === 'BANK_SYNC_COOLDOWN') showToast(t('{bank} synced a moment ago. Try again in a few minutes.', { bank }));
+      else if (e instanceof ApiError && e.code === 'BANK_RATE_LIMITED') showToast(t('{bank} allows only a few syncs a day. It will sync again tonight.', { bank }));
       else if (e instanceof ApiError && e.code === 'BANK_SESSION_EXPIRED') {
-        showToast(`${bank} needs to be connected again`, 'error', { label: 'Renew', onPress: onRenew });
+        showToast(t('{bank} needs to be connected again', { bank }), 'error', { label: t('Renew'), onPress: onRenew });
         void queryClient.invalidateQueries({ queryKey: ['bank-connections'] });
-      } else reportActionError(e, 'Syncing');
+      } else reportActionError(e, t('Syncing'));
     } finally {
       setBusy(false);
     }
@@ -95,12 +102,12 @@ function BankCard({ bank: b, now, onRenew }: { bank: BankConnection; now: number
           <CircleCheck size={18} strokeWidth={1.5} color={hex.success} />
         )}
         <Text style={[type.bodyMedium, { flex: 1 }]}>{bank}</Text>
-        <Text style={type.meta}>{dead ? 'Disconnected' : settingUp ? 'Being set up' : b.status === 'active' ? 'Connected' : 'Sync failed'}</Text>
+        <Text style={type.meta}>{dead ? t('Disconnected') : settingUp ? t('Being set up') : b.status === 'active' ? t('Connected') : t('Sync failed')}</Text>
       </View>
       <Text style={type.meta}>
         {[
-          b.last_synced_at ? `Last synced ${formatRelative(b.last_synced_at)}` : 'Never synced',
-          expiresIn == null ? null : expiresIn > 0 ? `consent until ${formatDay(b.consent_expires!)}` : 'consent ended',
+          b.last_synced_at ? t('Last synced {when}', { when: formatRelative(b.last_synced_at, t.lang) }) : t('Never synced'),
+          expiresIn == null ? null : expiresIn > 0 ? t('consent until {date}', { date: formatDay(b.consent_expires!, t.lang) }) : t('consent ended'),
         ]
           .filter(Boolean)
           .join(' · ')}
@@ -108,16 +115,23 @@ function BankCard({ bank: b, now, onRenew }: { bank: BankConnection; now: number
       {b.status !== 'active' && !settingUp ? (
         <Attn>
           {dead
-            ? 'The bank ended this connection. Renew it with BankID on the web.'
-            : 'The last sync failed. Try Sync now; if it keeps failing, renew the connection with BankID on the web.'}
+            ? t('The bank ended this connection. Renew it with BankID on the web.')
+            : t('The last sync failed. Try Sync now; if it keeps failing, renew the connection with BankID on the web.')}
         </Attn>
       ) : null}
       {b.status === 'active' && expiresIn != null && expiresIn < 14 ? (
-        <Attn>{`The consent ends in ${Math.max(expiresIn, 0)} day${expiresIn === 1 ? '' : 's'}. Renew it with BankID on the web to keep transactions coming.`}</Attn>
+        <Attn>
+          {t(
+            expiresIn === 1
+              ? 'The consent ends in {n} day. Renew it with BankID on the web to keep transactions coming.'
+              : 'The consent ends in {n} days. Renew it with BankID on the web to keep transactions coming.',
+            { n: Math.max(expiresIn, 0) },
+          )}
+        </Attn>
       ) : null}
       <View style={st.actions}>
-        {!dead && !settingUp ? <Button size="sm" variant="outline" title="Sync now" onPress={sync} busy={busy} /> : null}
-        {attention ? <Button size="sm" variant={dead ? 'primary' : 'outline'} title="Renew on the web" onPress={onRenew} /> : null}
+        {!dead && !settingUp ? <Button size="sm" variant="outline" title={t('Sync now')} onPress={sync} busy={busy} /> : null}
+        {attention ? <Button size="sm" variant={dead ? 'primary' : 'outline'} title={t('Renew on the web')} onPress={onRenew} /> : null}
       </View>
     </View>
   );

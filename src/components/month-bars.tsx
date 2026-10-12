@@ -6,7 +6,8 @@ import Animated, { useAnimatedStyle, useSharedValue, withDelay, withTiming } fro
 import { scheduleOnRN } from 'react-native-worklets';
 
 import { Tag } from '@/components/ui';
-import { formatMoney, formatMoneyShort } from '@/lib/format';
+import { dateFormat, formatMoney, formatMoneyShort } from '@/lib/format';
+import { capitalize, useT } from '@/lib/i18n';
 import { colors, fonts, motion, radius, space, type } from '@/lib/theme';
 
 export type Month = { label: string; income: number; expenses: number; net: number };
@@ -14,8 +15,6 @@ export type Month = { label: string; income: number; expenses: number; net: numb
 const HEIGHT = 120;
 const MIN_SIDE = 24; // the smaller side keeps a little room so small bars still read
 
-const monthLong = new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric' });
-const monthShort = new Intl.DateTimeFormat('en-GB', { month: 'short' });
 
 /** The calendar month at index i of a fiscal year that starts on `start` (YYYY-MM-DD). */
 function monthAt(start: string, i: number) {
@@ -42,6 +41,9 @@ export function MonthBars({
   /** False for a fiscal year that has ended: the readout then says "2026", not "2026 so far". */
   ongoing?: boolean;
 }) {
+  const t = useT();
+  const monthLong = dateFormat(t.lang, 'monthYear', { month: 'long', year: 'numeric' });
+  const monthShort = dateFormat(t.lang, 'monthShort', { month: 'short' });
   const maxUp = Math.max(0, ...months.map((m) => m.net));
   const maxDown = Math.max(0, ...months.map((m) => -m.net));
   const total = maxUp + maxDown || 1;
@@ -61,7 +63,7 @@ export function MonthBars({
   );
   const m = sel == null ? year : months[sel];
   // The pill names what the numbers below cover: the year, or the month you tapped.
-  const title = sel == null ? yearLabel : monthLong.format(monthAt(start, sel));
+  const title = sel == null ? yearLabel : capitalize(monthLong.format(monthAt(start, sel)));
 
   // The gesture runs on the UI thread and keeps the current pick in a shared
   // value, so it never acts on a stale render; React only hears about changes.
@@ -110,8 +112,8 @@ export function MonthBars({
   return (
     <View style={{ gap: space(3) }}>
       <View style={st.header}>
-        <Text style={type.label}>Result per month</Text>
-        <Tag onPress={sel == null ? undefined : () => step(-1)} accessibilityLabel={sel == null ? undefined : `${title}, show the whole year`}>
+        <Text style={type.label}>{t('Result per month')}</Text>
+        <Tag onPress={sel == null ? undefined : () => step(-1)} accessibilityLabel={sel == null ? undefined : t('{period}, show the whole year', { period: title })}>
           {title}
         </Tag>
       </View>
@@ -122,7 +124,7 @@ export function MonthBars({
             {formatMoney(m.net)}
           </Text>
           <Text style={[type.meta, { fontVariant: ['tabular-nums'] }]}>
-            {`In ${formatMoneyShort(m.income)} · Out ${formatMoneyShort(m.expenses)}`}
+            {t('In {income} · Out {expenses}', { income: formatMoneyShort(m.income), expenses: formatMoneyShort(m.expenses) })}
           </Text>
         </View>
       ) : null}
@@ -131,8 +133,8 @@ export function MonthBars({
         <View
           accessible
           accessibilityRole="adjustable"
-          accessibilityLabel={`Result per month, ${yearLabel}`}
-          accessibilityValue={{ text: `${sel == null && ongoing ? `${title} so far` : title}: ${formatMoney(m.net)}` }}
+          accessibilityLabel={t('Result per month, {year}', { year: yearLabel })}
+          accessibilityValue={{ text: `${sel == null && ongoing ? t('{period} so far', { period: title }) : title}: ${formatMoney(m.net)}` }}
           onAccessibilityAction={(e) => {
             if (e.nativeEvent.actionName === 'increment') step(sel == null ? 0 : Math.min(count - 1, sel + 1));
             if (e.nativeEvent.actionName === 'decrement') step(sel == null ? count - 1 : Math.max(0, sel - 1));

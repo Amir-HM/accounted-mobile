@@ -5,6 +5,7 @@ import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 're
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 
+import { useT } from '@/lib/i18n';
 import { captureFile, useCaptures } from '@/lib/queue';
 import { colors, useHex } from '@/lib/theme';
 
@@ -15,6 +16,7 @@ export default function Viewer() {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const hex = useHex();
+  const t = useT();
   if (!c) return null;
   const uri = captureFile(c).uri;
 
@@ -43,7 +45,7 @@ export default function Viewer() {
       )}
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Close"
+        accessibilityLabel={t('Close')}
         onPress={() => router.back()}
         hitSlop={12}
         style={[st.close, { top: insets.top + 8 }]}>

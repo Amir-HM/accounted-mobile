@@ -1,5 +1,6 @@
-import { ApiError } from './api';
+import { ApiError, serverMessage } from './api';
 import type { Connection } from './connection';
+import { tr } from './i18n';
 
 /**
  * A few of Accounted's MCP tools, called statelessly over HTTP with the same
@@ -19,19 +20,19 @@ export async function callTool<T>(conn: Connection, name: string, args: Record<s
       body: JSON.stringify({ jsonrpc: '2.0', id: Date.now(), method: 'tools/call', params: { name, arguments: args } }),
     });
   } catch {
-    throw new ApiError(0, 'NETWORK', 'No connection to the server.');
+    throw new ApiError(0, 'NETWORK', tr('No connection to the server.'));
   }
-  if (res.status === 404) throw new ApiError(404, 'MCP_UNAVAILABLE', 'This server has no MCP endpoint.');
-  if (res.status === 429) throw new ApiError(429, 'RATE_LIMITED', 'Too many requests right now. Trying again shortly.');
+  if (res.status === 404) throw new ApiError(404, 'MCP_UNAVAILABLE', tr('This server has no MCP endpoint.'));
+  if (res.status === 429) throw new ApiError(429, 'RATE_LIMITED', tr('Too many requests right now. Trying again shortly.'));
   const body = await res.json().catch(() => null);
-  if (!res.ok || !body) throw new ApiError(res.status, `HTTP_${res.status}`, `Request failed (${res.status}).`);
-  if (body.error) throw new ApiError(400, 'MCP_ERROR', body.error.message ?? 'The server rejected the request.');
+  if (!res.ok || !body) throw new ApiError(res.status, `HTTP_${res.status}`, tr('Request failed ({status}).', { status: res.status }));
+  if (body.error) throw new ApiError(400, 'MCP_ERROR', body.error.message ?? tr('The server rejected the request.'));
   const result = body.result;
   const text = result?.content?.find((c: { type: string }) => c.type === 'text')?.text;
   const parsed = result?.structuredContent ?? (text ? JSON.parse(text) : null);
   if (result?.isError || parsed?.error) {
     const e = parsed?.error;
-    throw new ApiError(400, e?.code ?? 'TOOL_ERROR', e?.message_en ?? e?.message ?? 'The server rejected the request.');
+    throw new ApiError(400, e?.code ?? 'TOOL_ERROR', serverMessage(e) ?? tr('The server rejected the request.'));
   }
   return parsed as T;
 }

@@ -26,6 +26,7 @@ import { listPending, suggestCategories } from './mcp';
 import { usePref } from './prefs';
 import { deviceStore, numberCodec } from './device-store';
 import { localDate } from './format';
+import { getLang, translate, type Lang } from './i18n';
 
 const rateLimited = (e: unknown) => e instanceof ApiError && e.status === 429;
 
@@ -149,7 +150,8 @@ const lookbackDays = deviceStore('accounted.lookbackDays', 30, numberCodec);
 export const setLookbackDays = (days: number) => lookbackDays.set(days);
 export const useLookbackDays = lookbackDays.use;
 
-export const lookbackLabel = (d: number) => (d >= 365 ? 'Last 12 months' : `Last ${d} days`);
+export const lookbackLabel = (d: number, lang: Lang = getLang()) =>
+  d >= 365 ? translate(lang, 'Last 12 months') : translate(lang, 'Last {n} days', { n: d });
 
 // ---- Booking and approvals ----
 

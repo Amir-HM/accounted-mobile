@@ -1,4 +1,5 @@
 import type { Connection } from './connection';
+import { getLang, tr } from './i18n';
 
 /**
  * Thin client for Accounted's public v1 REST API (/api/v1/openapi.json).
@@ -15,6 +16,14 @@ export class ApiError extends Error {
   ) {
     super(message);
   }
+}
+
+/**
+ * The server's own explanation, in the app's language: the error envelope
+ * carries Swedish (`message`) and English (`message_en`).
+ */
+export function serverMessage(e: { message?: string; message_en?: string } | null | undefined): string | undefined {
+  return getLang() === 'sv' ? (e?.message ?? e?.message_en) : (e?.message_en ?? e?.message);
 }
 
 type Envelope<T> = {
@@ -43,7 +52,7 @@ export async function request<T>(
   try {
     res = await fetch(`${conn.serverUrl}/api/v1${path}`, { ...init, headers });
   } catch {
-    throw new ApiError(0, 'NETWORK', 'No connection to the server.');
+    throw new ApiError(0, 'NETWORK', tr('No connection to the server.'));
   }
   const text = await res.text();
   let body: any = null;
@@ -54,13 +63,13 @@ export async function request<T>(
   }
   // A 429 the server explains (a bank cooldown, say) keeps its own code; a bare one is our rate limit.
   const retryAfter = Number(res.headers.get('retry-after')) || undefined;
-  if (res.status === 429 && !body?.error?.code) throw new ApiError(429, 'RATE_LIMITED', 'Too many requests right now. Trying again shortly.', retryAfter);
+  if (res.status === 429 && !body?.error?.code) throw new ApiError(429, 'RATE_LIMITED', tr('Too many requests right now. Trying again shortly.'), retryAfter);
   if (!res.ok || !body) {
     const e = body?.error;
     throw new ApiError(
       res.status,
       e?.code ?? (body ? 'HTTP_' + res.status : 'NOT_ACCOUNTED'),
-      e?.message_en ?? e?.message ?? (body ? `Request failed (${res.status}).` : 'That address did not answer like an Accounted server.'),
+      serverMessage(e) ?? (body ? tr('Request failed ({status}).', { status: res.status }) : tr('That address did not answer like an Accounted server.')),
       retryAfter,
     );
   }

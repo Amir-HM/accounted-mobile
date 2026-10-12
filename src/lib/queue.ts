@@ -4,10 +4,11 @@ import Storage from 'expo-sqlite/kv-store';
 import { useSyncExternalStore } from 'react';
 import { AppState } from 'react-native';
 
-import { ApiError, attachDocument, documentsUrl, request, type UploadedDocument } from './api';
+import { ApiError, attachDocument, documentsUrl, request, serverMessage, type UploadedDocument } from './api';
 import { verify } from './checks';
 import { loadConnection, type Connection } from './connection';
 import { formatMoney } from './format';
+import { getLang, localeOf, tr } from './i18n';
 import { completeUpload, createUpload, type Extraction } from './mcp';
 import { showToast } from './toast';
 
@@ -193,7 +194,7 @@ export async function enqueue(input: {
   const size = target.size ?? 0;
   if (size > MAX_BYTES) {
     folder.delete();
-    throw new Error(`The file is ${(size / 1048576).toFixed(1)} MB; the server accepts at most 10 MB.`);
+    throw new Error(tr('The file is {size} MB; the server accepts at most 10 MB.', { size: (size / 1048576).toLocaleString(localeOf(getLang()), { minimumFractionDigits: 1, maximumFractionDigits: 1 }) }));
   }
   const capture: Capture = {
     id,
@@ -260,7 +261,7 @@ async function uploadViaInbox(conn: Connection, c: Capture): Promise<Uploaded> {
   });
   // 409 = these bytes already sit at this path (a retry after a lost response).
   if ((put.status < 200 || put.status >= 300) && put.status !== 409) {
-    throw new ApiError(put.status, `HTTP_${put.status}`, `Upload failed (${put.status}).`);
+    throw new ApiError(put.status, `HTTP_${put.status}`, tr('Upload failed ({status}).', { status: put.status }));
   }
   setProgress(c.id, 1);
   const done = await completeUpload(conn, uploadId, c.fileName, c.mimeType);
@@ -285,7 +286,7 @@ async function uploadViaRest(conn: Connection, c: Capture): Promise<Uploaded> {
   } catch {}
   if (res.status < 200 || res.status >= 300 || !body?.data) {
     const e = body?.error;
-    throw new ApiError(res.status, e?.code ?? `HTTP_${res.status}`, e?.message_en ?? e?.message ?? `Upload failed (${res.status}).`);
+    throw new ApiError(res.status, e?.code ?? `HTTP_${res.status}`, serverMessage(e) ?? tr('Upload failed ({status}).', { status: res.status }));
   }
   const doc = body.data as UploadedDocument;
   return { documentId: doc.id, sha256: doc.sha256_hash };
@@ -339,11 +340,11 @@ async function work() {
         });
         setProgress(c.id, null);
         if (up.sha256 !== c.sha256) {
-          showToast('Upload failed the integrity check. Keep the paper receipt.', 'error');
+          showToast(tr('Upload failed the integrity check. Keep the paper receipt.'), 'error');
           patch(c.id, {
             state: 'failed',
             documentId: up.documentId,
-            error: 'The archived file does not match the capture (hash mismatch). Keep the paper receipt.',
+            error: tr('The archived file does not match the capture (hash mismatch). Keep the paper receipt.'),
           });
           continue;
         }
@@ -367,11 +368,11 @@ async function work() {
       showToast(
         c.transaction
           ? v.state === 'warn'
-            ? `Attached to ${c.transaction.label}. ${v.summary}.`
-            : `Receipt attached to ${c.transaction.label}`
+            ? tr('Attached to {name}. {summary}.', { name: c.transaction.label, summary: v.summary })
+            : tr('Receipt attached to {name}', { name: c.transaction.label })
           : v.state === 'unread'
-            ? 'Receipt archived'
-            : `Receipt read: ${readingLine(latest?.extraction)}`,
+            ? tr('Receipt archived')
+            : tr('Receipt read: {reading}', { reading: readingLine(latest?.extraction) }),
         v.state === 'warn' ? 'error' : 'default',
       );
     } catch (e) {
@@ -385,7 +386,7 @@ async function work() {
         error: msg,
         nextAttemptAt: failedHard ? undefined : new Date(Date.now() + wait).toISOString(),
       });
-      if (failedHard) showToast('Upload failed. Keep the paper receipt.', 'error');
+      if (failedHard) showToast(tr('Upload failed. Keep the paper receipt.'), 'error');
       if (e instanceof ApiError && e.status === 0) break; // offline: stop, retry on reconnect
     }
   }

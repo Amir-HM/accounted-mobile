@@ -9,6 +9,7 @@ import { Attn, Button, EmptyState, Segmented, TopBar } from '@/components/ui';
 import { ApiError, type Invoice } from '@/lib/api';
 import { clearConnection, useConnection } from '@/lib/connection';
 import { formatDay, formatMoney, localDate } from '@/lib/format';
+import { useT, type T } from '@/lib/i18n';
 import { isOverdue, queryClient, useInvoices } from '@/lib/queries';
 import { colors, fonts, space, type } from '@/lib/theme';
 
@@ -19,6 +20,7 @@ type View_ = 'unpaid' | 'paid';
  * Sending, reminders and marking paid stay on the web for now.
  */
 export default function Invoices() {
+  const t = useT();
   const conn = useConnection();
   const [view, setView] = useState<View_>('unpaid');
   const unpaidQ = useInvoices('unpaid');
@@ -38,7 +40,7 @@ export default function Invoices() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <TopBar title="Invoices" back />
+      <TopBar title={t('Invoices')} back />
       <FlashList
         data={noScope ? [] : rows}
         keyExtractor={(i) => i.id}
@@ -48,9 +50,9 @@ export default function Invoices() {
           <View style={{ paddingTop: space(6), paddingBottom: space(2), gap: space(4) }}>
             {noScope ? (
               <View style={{ gap: space(3) }}>
-                <Attn>This iPhone signed in before invoices were part of the app. Sign in again to see them.</Attn>
+                <Attn>{t('This iPhone signed in before invoices were part of the app. Sign in again to see them.')}</Attn>
                 <Button
-                  title="Sign in again"
+                  title={t('Sign in again')}
                   variant="outline"
                   onPress={async () => {
                     queryClient.clear();
@@ -59,17 +61,23 @@ export default function Invoices() {
                 />
               </View>
             ) : q.error ? (
-              <Attn action="Try again" onAction={() => q.refetch()}>
+              <Attn action={t('Try again')} onAction={() => q.refetch()}>
                 {q.error.message}
               </Attn>
             ) : (
               <>
                 {unpaid.length ? (
                   <View style={{ gap: space(1) }}>
-                    <Text style={type.label}>Customers owe you</Text>
+                    <Text style={type.label}>{t('Customers owe you')}</Text>
                     <Text style={[type.number, { fontSize: 36, lineHeight: 42 }]}>{formatMoney(owed)}</Text>
                     <Text style={type.meta}>
-                      {`${unpaid.length} unpaid${unpaid.some((i) => isOverdue(i, today)) ? ` · ${unpaid.filter((i) => isOverdue(i, today)).length} overdue` : ''}${foreign ? ` · ${foreign} in other currencies not in the total` : ''}`}
+                      {[
+                        t('{n} unpaid', { n: unpaid.length }),
+                        unpaid.some((i) => isOverdue(i, today)) ? t('{n} overdue', { n: unpaid.filter((i) => isOverdue(i, today)).length }) : null,
+                        foreign ? t('{n} in other currencies not in the total', { n: foreign }) : null,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
                     </Text>
                   </View>
                 ) : null}
@@ -78,12 +86,14 @@ export default function Invoices() {
                   value={view}
                   onChange={setView}
                   options={[
-                    { key: 'unpaid', label: 'Unpaid', count: unpaidQ.isPending ? undefined : unpaid.length },
-                    { key: 'paid', label: 'Paid', count: paidQ.data ? paid.length : undefined },
+                    { key: 'unpaid', label: t('Unpaid'), count: unpaidQ.isPending ? undefined : unpaid.length },
+                    { key: 'paid', label: t('Paid'), count: paidQ.data ? paid.length : undefined },
                   ]}
                 />
                 {unpaidQ.data?.preRegister && unpaidQ.data.coversFrom ? (
-                  <Text style={type.meta}>{`Only invoices made in Accounted, from ${formatDay(unpaidQ.data.coversFrom)}. Earlier ones are in the books but not listed here.`}</Text>
+                  <Text style={type.meta}>
+                    {t('Only invoices made in Accounted, from {date}. Earlier ones are in the books but not listed here.', { date: formatDay(unpaidQ.data.coversFrom, t.lang) })}
+                  </Text>
                 ) : null}
               </>
             )}
@@ -99,13 +109,13 @@ export default function Invoices() {
           ) : (
             <EmptyState
               icon={FileText}
-              title={view === 'unpaid' ? 'Nothing outstanding' : 'No paid invoices yet'}
+              title={view === 'unpaid' ? t('Nothing outstanding') : t('No paid invoices yet')}
               message={
                 all.length
                   ? view === 'unpaid'
-                    ? 'Every invoice has been paid.'
-                    : 'Paid invoices show up here.'
-                  : 'Invoices you make in Accounted show up here. If you invoice from another system, they are not listed.'
+                    ? t('Every invoice has been paid.')
+                    : t('Paid invoices show up here.')
+                  : t('Invoices you make in Accounted show up here. If you invoice from another system, they are not listed.')
               }
             />
           )
@@ -114,6 +124,7 @@ export default function Invoices() {
           <InvoiceRow
             invoice={item}
             today={today}
+            t={t}
             last={index === rows.length - 1}
             onPress={() => conn && WebBrowser.openBrowserAsync(`${conn.serverUrl}/invoices/${item.id}`)}
           />
@@ -123,15 +134,15 @@ export default function Invoices() {
   );
 }
 
-function InvoiceRow({ invoice: i, today, last, onPress }: { invoice: Invoice; today: string; last: boolean; onPress: () => void }) {
+function InvoiceRow({ invoice: i, today, t, last, onPress }: { invoice: Invoice; today: string; t: T; last: boolean; onPress: () => void }) {
   const late = isOverdue(i, today);
   const days = Math.round((new Date(`${today}T12:00:00`).getTime() - new Date(`${i.due_date}T12:00:00`).getTime()) / 86400_000);
   const when =
     i.status === 'paid'
-      ? `Paid ${i.paid_at ? formatDay(i.paid_at.slice(0, 10)) : ''}`
+      ? t('Paid {date}', { date: i.paid_at ? formatDay(i.paid_at.slice(0, 10), t.lang) : '' }).trim()
       : late
-        ? `${days} day${days === 1 ? '' : 's'} overdue`
-        : `Due ${formatDay(i.due_date)}`;
+        ? t(days === 1 ? '{n} day overdue' : '{n} days overdue', { n: days })
+        : t('Due {date}', { date: formatDay(i.due_date, t.lang) });
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [st.row, !last && st.divider, pressed && { backgroundColor: colors.muted }]}>
       <View style={{ flex: 1, gap: 2 }}>

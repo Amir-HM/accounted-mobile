@@ -7,6 +7,7 @@ import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { CaptureThumb } from '@/components/capture-row';
 import { EmptyState } from '@/components/ui';
 import { formatMoney } from '@/lib/format';
+import { useT } from '@/lib/i18n';
 import { merchantName } from '@/lib/merchants';
 import { useHiddenIds, useMissingReceipts } from '@/lib/queries';
 import { suggestPayment } from '@/lib/checks';
@@ -16,6 +17,7 @@ import { colors, fonts, space, type } from '@/lib/theme';
 /** Form sheet: pick the payment an archived, unmatched receipt belongs to. */
 export default function Assign() {
   const { captureId } = useLocalSearchParams<{ captureId: string }>();
+  const t = useT();
   const captures = useCaptures();
   const capture = captures.find((c) => c.id === captureId);
   const missing = useMissingReceipts();
@@ -38,30 +40,30 @@ export default function Assign() {
         <View style={{ flexDirection: 'row', gap: space(3), alignItems: 'center', paddingVertical: space(4) }}>
           <CaptureThumb capture={capture} size={48} />
           <Text style={[type.meta, { flex: 1, lineHeight: 18 }]}>
-            Choose the payment this receipt belongs to. It becomes the payment’s underlag.
+            {t('Choose the payment this receipt belongs to. It becomes the payment’s underlag.')}
           </Text>
         </View>
       }
       ListEmptyComponent={
         <EmptyState
           icon={Inbox}
-          title="No open payments"
-          message={missing.isPending ? 'Loading…' : 'Every payment in this period already has a receipt.'}
+          title={t('No open payments')}
+          message={missing.isPending ? t('Loading…') : t('Every payment in this period already has a receipt.')}
         />
       }
-      renderItem={({ item: t, index }) => {
-        const label = merchantName(t.merchant_name ?? t.description);
+      renderItem={({ item: tx, index }) => {
+        const label = merchantName(tx.merchant_name ?? tx.description, undefined, t.lang);
         return (
           <Pressable
             style={({ pressed }) => [st.row, index < options.length - 1 && st.divider, pressed && { backgroundColor: colors.muted }]}
             onPress={() =>
-              Alert.alert(`Attach to ${label}?`, `${formatMoney(t.amount, t.currency)} on ${t.date.slice(0, 10)}.`, [
-                { text: 'Cancel', style: 'cancel' },
+              Alert.alert(t('Attach to {name}?', { name: label }), t('{amount} on {date}.', { amount: formatMoney(tx.amount, tx.currency), date: tx.date.slice(0, 10) }), [
+                { text: t('Cancel'), style: 'cancel' },
                 {
-                  text: 'Attach',
+                  text: t('Attach'),
                   isPreferred: true,
                   onPress: () => {
-                    assignTransaction(capture.id, { id: t.id, label, amount: t.amount, currency: t.currency, date: t.date });
+                    assignTransaction(capture.id, { id: tx.id, label, amount: tx.amount, currency: tx.currency, date: tx.date });
                     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                     router.back();
                   },
@@ -69,14 +71,14 @@ export default function Assign() {
               ])
             }
           >
-            <Text style={st.date}>{t.date.slice(0, 10)}</Text>
+            <Text style={st.date}>{tx.date.slice(0, 10)}</Text>
             <View style={{ flex: 1 }}>
               <Text style={type.body} numberOfLines={1}>
                 {label}
               </Text>
-              {suggested?.id === t.id ? <Text style={[type.meta, { color: colors.success }]}>Same amount and date as the receipt</Text> : null}
+              {suggested?.id === tx.id ? <Text style={[type.meta, { color: colors.success }]}>{t('Same amount and date as the receipt')}</Text> : null}
             </View>
-            <Text style={st.amount}>{formatMoney(t.amount, t.currency)}</Text>
+            <Text style={st.amount}>{formatMoney(tx.amount, tx.currency)}</Text>
           </Pressable>
         );
       }}

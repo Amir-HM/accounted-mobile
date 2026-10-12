@@ -11,6 +11,7 @@ import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, useWindowDimen
 import { Button, Segmented } from '@/components/ui';
 import { captureAndQueue, type CaptureMethod } from '@/lib/capture';
 import { formatMoney } from '@/lib/format';
+import { useT } from '@/lib/i18n';
 import { enqueue, type Capture } from '@/lib/queue';
 import { showToast } from '@/lib/toast';
 import { colors, fonts, radius, space, type, useHex } from '@/lib/theme';
@@ -33,10 +34,11 @@ export default function AddReceipt() {
   const p = useLocalSearchParams<{ txId?: string }>();
   const conn = useConnection();
   const own = useMerchantNames();
+  const tl = useT();
   const txq = useQuery({ queryKey: ['tx', p.txId], queryFn: () => getTransaction(conn!, p.txId!), enabled: !!conn && !!p.txId });
   const t = txq.data;
   const tx: Capture['transaction'] | undefined = t
-    ? { id: t.id, label: merchantName(t.merchant_name ?? t.description, own), amount: t.amount, currency: t.currency, date: t.date }
+    ? { id: t.id, label: merchantName(t.merchant_name ?? t.description, own, tl.lang), amount: t.amount, currency: t.currency, date: t.date }
     : undefined;
   const hex = useHex();
   const { width } = useWindowDimensions();
@@ -85,7 +87,7 @@ export default function AddReceipt() {
         router.back();
       }
     } catch (e) {
-      Alert.alert('Could not add the receipt', e instanceof Error ? e.message : String(e));
+      Alert.alert(tl('Could not add the receipt'), e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -114,10 +116,10 @@ export default function AddReceipt() {
         await enqueue({ uri, fileName: name, mimeType: name.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg', source: 'file_upload', transaction: tx });
       }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      if (picked.length > 1) showToast(`${picked.length} receipts added`);
+      if (picked.length > 1) showToast(tl('{n} receipts added', { n: picked.length }));
       router.back();
     } catch (e) {
-      Alert.alert('Could not add the receipt', e instanceof Error ? e.message : String(e));
+      Alert.alert(tl('Could not add the receipt'), e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
@@ -128,18 +130,18 @@ export default function AddReceipt() {
       style={{ flex: 1, backgroundColor: colors.background }}
       contentContainerStyle={{ padding: space(4), paddingBottom: space(10), gap: space(4) }}>
         <View style={{ gap: 2 }}>
-          <Text style={[type.display, { fontSize: 24, lineHeight: 30 }]}>Add a receipt</Text>
-          {tx ? <Text style={type.meta}>{`For ${tx.label} · ${formatMoney(tx.amount, tx.currency)}`}</Text> : null}
+          <Text style={[type.display, { fontSize: 24, lineHeight: 30 }]}>{tl('Add a receipt')}</Text>
+          {tx ? <Text style={type.meta}>{tl('For {name} · {amount}', { name: tx.label, amount: formatMoney(tx.amount, tx.currency) })}</Text> : null}
         </View>
 
         <View style={{ flexDirection: 'row', gap: space(3) }}>
-          <Way icon={ScanLine} label="Scan" onPress={() => via('scan')} primary />
-          <Way icon={Images} label="Photos" onPress={() => via('photo')} />
-          <Way icon={FolderOpen} label="Files" onPress={() => via('file')} />
+          <Way icon={ScanLine} label={tl('Scan')} onPress={() => via('scan')} primary />
+          <Way icon={Images} label={tl('Photos')} onPress={() => via('photo')} />
+          <Way icon={FolderOpen} label={tl('Files')} onPress={() => via('file')} />
         </View>
 
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: space(2) }}>
-          <Text style={type.label}>Recent</Text>
+          <Text style={type.label}>{tl('Recent')}</Text>
           {perm?.granted ? (
             <Segmented
               value={filter}
@@ -149,26 +151,26 @@ export default function AddReceipt() {
                 void load(f);
               }}
               options={[
-                { key: 'recent', label: 'Photos' },
-                { key: 'screenshots', label: 'Screenshots' },
+                { key: 'recent', label: tl('Photos') },
+                { key: 'screenshots', label: tl('Screenshots') },
               ]}
             />
           ) : null}
         </View>
 
         {picked.length ? (
-          <Button title={picked.length > 1 ? `Add ${picked.length} receipts` : 'Add receipt'} onPress={addPicked} busy={busy} />
+          <Button title={picked.length > 1 ? tl('Add {n} receipts', { n: picked.length }) : tl('Add receipt')} onPress={addPicked} busy={busy} />
         ) : null}
 
         {perm && !perm.granted ? (
           <View style={st.allow}>
-            <Text style={[type.body, { textAlign: 'center' }]}>Show your latest photos and screenshots here</Text>
-            <Text style={[type.meta, { textAlign: 'center' }]}>Most receipts are the last thing you photographed.</Text>
-            <Button title={perm.canAskAgain ? 'Allow access' : 'Open Settings'} variant="outline" size="sm" onPress={allow} style={{ marginTop: space(2) }} />
+            <Text style={[type.body, { textAlign: 'center' }]}>{tl('Show your latest photos and screenshots here')}</Text>
+            <Text style={[type.meta, { textAlign: 'center' }]}>{tl('Most receipts are the last thing you photographed.')}</Text>
+            <Button title={perm.canAskAgain ? tl('Allow access') : tl('Open Settings')} variant="outline" size="sm" onPress={allow} style={{ marginTop: space(2) }} />
           </View>
         ) : assets && assets.length === 0 ? (
           <Text style={[type.meta, { paddingVertical: space(6), textAlign: 'center' }]}>
-            {filter === 'screenshots' ? 'No recent screenshots.' : 'No photos yet.'}
+            {filter === 'screenshots' ? tl('No recent screenshots.') : tl('No photos yet.')}
           </Text>
         ) : (
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: GAP }}>
@@ -201,9 +203,9 @@ export default function AddReceipt() {
         )}
         {perm?.accessPrivileges === 'limited' ? (
           <Text style={type.meta}>
-            Showing only the photos you shared with Accounted.{' '}
+            {tl('Showing only the photos you shared with Accounted.')}{' '}
             <Text style={{ textDecorationLine: 'underline', color: colors.foreground }} onPress={() => Linking.openSettings()}>
-              Change
+              {tl('Change')}
             </Text>
           </Text>
         ) : null}

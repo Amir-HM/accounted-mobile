@@ -13,6 +13,7 @@ import { captureUnlinked } from '@/lib/capture';
 import { useHiddenIds, useMissingReceipts } from '@/lib/queries';
 import { useCaptures, type Capture } from '@/lib/queue';
 import { formatMoney } from '@/lib/format';
+import { useT } from '@/lib/i18n';
 import { attachMatch, useReceiptMatches, type ReceiptMatch } from '@/lib/matches';
 import { merchantName, useMerchantNames } from '@/lib/merchants';
 import { colors, fonts, space, type } from '@/lib/theme';
@@ -27,6 +28,7 @@ type Item =
 
 
 export default function Receipts() {
+  const t = useT();
   const missing = useMissingReceipts();
   const hidden = useHiddenIds();
   const captures = useCaptures();
@@ -55,13 +57,13 @@ export default function Receipts() {
   const items: Item[] = [];
   if (view === 'missing') {
     if (matches.length) {
-      items.push({ kind: 'label', key: 'l-match', title: 'Ready to attach' });
+      items.push({ kind: 'label', key: 'l-match', title: t('Ready to attach') });
       matches.forEach((m, i) => items.push({ kind: 'match', key: `m-${m.capture.id}`, match: m, last: i === matches.length - 1 }));
     }
     if (onPhone.length) {
-      items.push({ kind: 'label', key: 'l-phone', title: 'On this iPhone' });
+      items.push({ kind: 'label', key: 'l-phone', title: t('On this iPhone') });
       onPhone.forEach((c, i) => items.push({ kind: 'capture', key: c.id, capture: c, last: i === onPhone.length - 1 }));
-      items.push({ kind: 'label', key: 'l-missing', title: 'Missing a receipt' });
+      items.push({ kind: 'label', key: 'l-missing', title: t('Missing a receipt') });
     }
     if (missing.isPending) items.push({ kind: 'loading', key: 'loading' });
     else if (!todo.length) items.push({ kind: 'empty', key: 'empty' });
@@ -75,11 +77,11 @@ export default function Receipts() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <TopBar
-        title="Receipts"
+        title={t('Receipts')}
         right={
           <>
-            <Button size="sm" variant="outline" icon={Plus} onPress={() => router.push('/add')} />
-            <Button size="sm" icon={ScanLine} title="Scan" onPress={() => captureUnlinked('scan')} />
+            <Button size="sm" variant="outline" icon={Plus} accessibilityLabel={t('Add a receipt')} onPress={() => router.push('/add')} />
+            <Button size="sm" icon={ScanLine} title={t('Scan')} onPress={() => captureUnlinked('scan')} />
           </>
         }
       />
@@ -94,19 +96,23 @@ export default function Receipts() {
         ListHeaderComponent={
           <View style={{ paddingTop: space(4), paddingBottom: space(2), gap: space(4) }}>
             {missing.error ? (
-              <Attn action="Try again" onAction={() => missing.refetch()}>
+              <Attn action={t('Try again')} onAction={() => missing.refetch()}>
                 {missing.error.message}
               </Attn>
             ) : failed ? (
-              <Attn>{`${failed} upload${failed === 1 ? '' : 's'} failed. Keep the paper and tap the row to retry.`}</Attn>
+              <Attn>
+                {t(failed === 1 ? '{n} upload failed. Keep the paper and tap the row to retry.' : '{n} uploads failed. Keep the paper and tap the row to retry.', {
+                  n: failed,
+                })}
+              </Attn>
             ) : null}
             <Segmented
               fill
               value={view}
               onChange={setView}
               options={[
-                { key: 'missing', label: 'Missing', count: missing.isPending ? undefined : todo.length },
-                { key: 'attached', label: 'Attached', count: attached.length },
+                { key: 'missing', label: t('Missing'), count: missing.isPending ? undefined : todo.length },
+                { key: 'attached', label: t('Attached'), count: attached.length },
               ]}
             />
           </View>
@@ -118,6 +124,7 @@ export default function Receipts() {
 }
 
 function ItemView({ item, view }: { item: Item; view: 'missing' | 'attached' }) {
+  const t = useT();
   switch (item.kind) {
     case 'label':
       return <SectionLabel>{item.title}</SectionLabel>;
@@ -150,11 +157,11 @@ function ItemView({ item, view }: { item: Item; view: 'missing' | 'attached' }) 
       return view === 'missing' ? (
         <EmptyState
           icon={CircleCheck}
-          title="All caught up"
-          message="Every payment in this period has a receipt. New card payments show up here after the next bank sync."
+          title={t('All caught up')}
+          message={t('Every payment in this period has a receipt. New card payments show up here after the next bank sync.')}
         />
       ) : (
-        <EmptyState icon={CircleCheck} title="Nothing yet" message="Receipts you attach from this iPhone show up here for 30 days." />
+        <EmptyState icon={CircleCheck} title={t('Nothing yet')} message={t('Receipts you attach from this iPhone show up here for 30 days.')} />
       );
   }
 }
@@ -162,17 +169,18 @@ function ItemView({ item, view }: { item: Item; view: 'missing' | 'attached' }) 
 /** A receipt scanned before its payment arrived, next to the payment it fits. */
 function MatchRow({ match, last }: { match: ReceiptMatch; last: boolean }) {
   const own = useMerchantNames();
+  const t = useT();
   const { capture: c, tx } = match;
   return (
     <View style={[st.match, !last && st.divider]}>
       <CaptureThumb capture={c} />
       <View style={{ flex: 1, gap: 2 }}>
         <Text style={type.body} numberOfLines={1}>
-          {merchantName(tx.merchant_name ?? tx.description, own)}
+          {merchantName(tx.merchant_name ?? tx.description, own, t.lang)}
         </Text>
-        <Text style={type.meta}>{`${formatMoney(tx.amount, tx.currency)} · ${tx.date.slice(0, 10)} · same amount and date`}</Text>
+        <Text style={type.meta}>{`${formatMoney(tx.amount, tx.currency)} · ${tx.date.slice(0, 10)} · ${t('same amount and date')}`}</Text>
       </View>
-      <Button size="sm" title="Attach" onPress={() => attachMatch(match)} />
+      <Button size="sm" title={t('Attach')} onPress={() => attachMatch(match)} />
     </View>
   );
 }

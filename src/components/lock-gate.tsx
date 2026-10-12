@@ -5,6 +5,7 @@ import { AppState, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeOut } from 'react-native-reanimated';
 
 import { Button } from '@/components/ui';
+import { tr, useT } from '@/lib/i18n';
 import { getPref, usePref } from '@/lib/prefs';
 import { colors, fonts, motion, space, type } from '@/lib/theme';
 
@@ -21,6 +22,7 @@ const MODAL = /^\/(viewer\/|add|assign\/|prime)/;
  *   passcode) before showing anything.
  */
 export function LockGate({ enabled }: { enabled: boolean }) {
+  const t = useT();
   const lock = usePref('faceIdLock');
   const cover = usePref('privacyCover');
   const [away, setAway] = useState(false);
@@ -37,7 +39,7 @@ export function LockGate({ enabled }: { enabled: boolean }) {
     if (prompting.current) return;
     prompting.current = true;
     try {
-      const r = await LocalAuthentication.authenticateAsync({ promptMessage: 'Unlock Accounted', disableDeviceFallback: false });
+      const r = await LocalAuthentication.authenticateAsync({ promptMessage: tr('Unlock Accounted'), disableDeviceFallback: false });
       if (r.success) setLocked(false);
     } finally {
       prompting.current = false;
@@ -74,8 +76,8 @@ export function LockGate({ enabled }: { enabled: boolean }) {
       <Text style={st.wordmark}>accounted</Text>
       {locked && lock && !away ? (
         <View style={{ gap: space(3), alignItems: 'center' }}>
-          <Text style={type.meta}>Locked</Text>
-          <Button title="Unlock" onPress={unlock} style={{ minWidth: 180 }} />
+          <Text style={type.meta}>{t('Locked')}</Text>
+          <Button title={t('Unlock')} onPress={unlock} style={{ minWidth: 180 }} />
         </View>
       ) : null}
     </Animated.View>

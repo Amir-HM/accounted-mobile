@@ -5,6 +5,7 @@ import * as Print from 'expo-print';
 import * as Haptics from 'expo-haptics';
 import { Alert, TurboModuleRegistry } from 'react-native';
 
+import { tr } from './i18n';
 import { enqueue, type Capture } from './queue';
 
 type Picked = { uri: string; fileName: string; mimeType: string; source: Capture['source']; pages: number };
@@ -17,7 +18,7 @@ const hasScanner = () => TurboModuleRegistry.get('DocumentScanner') != null;
 /** Expo Go fallback: the plain camera, one photo. */
 async function takePhoto(): Promise<Picked | null> {
   const perm = await ImagePicker.requestCameraPermissionsAsync();
-  if (!perm.granted) throw new Error('Camera access is off. Turn it on in Settings to photograph receipts.');
+  if (!perm.granted) throw new Error(tr('Camera access is off. Turn it on in Settings to photograph receipts.'));
   const res = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.9 });
   const a = res.canceled ? null : res.assets[0];
   if (!a) return null;
@@ -80,6 +81,6 @@ export async function captureUnlinked(method: CaptureMethod) {
     const c = await captureAndQueue(method);
     if (c) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   } catch (e) {
-    Alert.alert('Could not add the receipt', e instanceof Error ? e.message : String(e));
+    Alert.alert(tr('Could not add the receipt'), e instanceof Error ? e.message : String(e));
   }
 }

@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { useColorScheme } from 'react-native';
 
 import { useHiddenIds, useMissingReceipts } from '@/lib/queries';
+import { useT } from '@/lib/i18n';
 import { usePushEnabled } from '@/lib/push';
 import { useCaptures } from '@/lib/queue';
 import { fonts, useHex } from '@/lib/theme';
@@ -16,6 +17,7 @@ import { fonts, useHex } from '@/lib/theme';
  */
 export default function TabsLayout() {
   const hex = useHex();
+  const t = useT();
   const missing = useMissingReceipts();
   const hidden = useHiddenIds();
   const captures = useCaptures();
@@ -43,16 +45,16 @@ export default function TabsLayout() {
     >
       <NativeTabs.Trigger name="(home)">
         <NativeTabs.Trigger.Icon sf={{ default: 'house', selected: 'house.fill' }} />
-        <NativeTabs.Trigger.Label>Overview</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Label>{t('Overview')}</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="receipts">
         <NativeTabs.Trigger.Icon sf={{ default: 'receipt', selected: 'receipt.fill' }} />
-        <NativeTabs.Trigger.Label>Receipts</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Label>{t('Receipts')}</NativeTabs.Trigger.Label>
         {count > 0 ? <NativeTabs.Trigger.Badge>{count > 99 ? '99+' : String(count)}</NativeTabs.Trigger.Badge> : null}
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="settings">
         <NativeTabs.Trigger.Icon sf={{ default: 'gearshape', selected: 'gearshape.fill' }} />
-        <NativeTabs.Trigger.Label>Settings</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Label>{t('Settings')}</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
     </NativeTabs>
   );

@@ -3,6 +3,7 @@ import { Alert } from 'react-native';
 
 import { deviceStore } from './device-store';
 import { tidyMerchant } from './format';
+import { getLang, tr, type Lang } from './i18n';
 
 /**
  * Names you give a merchant on this iPhone. They apply to every payment with
@@ -45,9 +46,12 @@ function keyUncached(raw: string): string {
   return s;
 }
 
-/** The display name for a bank text: your name if you set one, else the built-in one. */
-export function merchantName(raw: string | null | undefined, own: Record<string, string> = names.get()): string {
-  return own[merchantKey(raw)] ?? tidyMerchant(raw);
+/**
+ * The display name for a bank text: your name if you set one, else the
+ * built-in one (in the app's language). From render, pass `t.lang`.
+ */
+export function merchantName(raw: string | null | undefined, own: Record<string, string> = names.get(), lang: Lang = getLang()): string {
+  return own[merchantKey(raw)] ?? tidyMerchant(raw, lang);
 }
 
 export function setMerchantName(raw: string | null | undefined, name: string | null) {
@@ -68,13 +72,13 @@ export const useMerchantNames = names.use;
 export function promptMerchantName(raw: string | null | undefined, current: string) {
   if (!merchantKey(raw)) return;
   Alert.prompt(
-    'Name this merchant',
-    'Used for every payment with this bank text, on this iPhone.',
+    tr('Name this merchant'),
+    tr('Used for every payment with this bank text, on this iPhone.'),
     [
-      { text: 'Cancel', style: 'cancel' },
-      ...(names.get()[merchantKey(raw)] ? [{ text: 'Reset', style: 'destructive' as const, onPress: () => setMerchantName(raw, null) }] : []),
+      { text: tr('Cancel'), style: 'cancel' },
+      ...(names.get()[merchantKey(raw)] ? [{ text: tr('Reset'), style: 'destructive' as const, onPress: () => setMerchantName(raw, null) }] : []),
       {
-        text: 'Save',
+        text: tr('Save'),
         isPreferred: true,
         onPress: (v?: string) => {
           setMerchantName(raw, v ?? null);

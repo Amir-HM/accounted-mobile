@@ -5,6 +5,7 @@ import { Alert, StyleSheet, Text, View } from 'react-native';
 
 import { Button } from '@/components/ui';
 import { useConnection } from '@/lib/connection';
+import { useT } from '@/lib/i18n';
 import { enablePush } from '@/lib/push';
 import { colors, fonts, radius, space, type } from '@/lib/theme';
 
@@ -13,6 +14,7 @@ import { colors, fonts, radius, space, type } from '@/lib/theme';
  * value is obvious. Shows what the notification looks like before iOS asks.
  */
 export default function PrimeNotifications() {
+  const t = useT();
   const conn = useConnection();
   const [busy, setBusy] = useState(false);
 
@@ -24,7 +26,7 @@ export default function PrimeNotifications() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.back();
     } catch (e) {
-      Alert.alert('Notifications', e instanceof Error ? e.message : String(e));
+      Alert.alert(t('Notifications'), e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
@@ -33,26 +35,26 @@ export default function PrimeNotifications() {
   return (
     <View style={st.root}>
       <View style={{ gap: space(2) }}>
-        <Text style={[type.display, { fontSize: 28, lineHeight: 34 }]}>Never chase a receipt again.</Text>
-        <Text style={type.lead}>Get a nudge right after a card payment, while the receipt is still in your hand.</Text>
+        <Text style={[type.display, { fontSize: 28, lineHeight: 34 }]}>{t('Never chase a receipt again.')}</Text>
+        <Text style={type.lead}>{t('Get a nudge right after a card payment, while the receipt is still in your hand.')}</Text>
       </View>
 
-      <View style={st.sample} accessibilityLabel="Example notification">
+      <View style={st.sample} accessibilityLabel={t('Example notification')}>
         <View style={st.icon}>
           <Text style={st.iconText}>a</Text>
         </View>
         <View style={{ flex: 1, gap: 2 }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-            <Text style={st.title}>Snap the receipt</Text>
-            <Text style={type.meta}>now</Text>
+            <Text style={st.title}>{t('Snap the receipt')}</Text>
+            <Text style={type.meta}>{t('now')}</Text>
           </View>
           <Text style={type.body}>Openrouter, Inc · −214,25 kr</Text>
         </View>
       </View>
 
       <View style={{ gap: space(3) }}>
-        <Button title="Turn on notifications" onPress={turnOn} busy={busy} />
-        <Button title="Not now" variant="link" onPress={() => router.back()} style={{ alignSelf: 'center' }} />
+        <Button title={t('Turn on notifications')} onPress={turnOn} busy={busy} />
+        <Button title={t('Not now')} variant="link" onPress={() => router.back()} style={{ alignSelf: 'center' }} />
       </View>
     </View>
   );

@@ -6,6 +6,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View, type StyleProp, t
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useT } from '@/lib/i18n';
 import { colors, fonts, motion, radius, space, type, useHex } from '@/lib/theme';
 
 const HAIRLINE = StyleSheet.hairlineWidth;
@@ -14,11 +15,12 @@ const HAIRLINE = StyleSheet.hairlineWidth;
 export function TopBar({ title, back, right }: { title: string; back?: boolean; right?: ReactNode }) {
   const insets = useSafeAreaInsets();
   const hex = useHex();
+  const t = useT();
   return (
     <View style={[s.topBar, { paddingTop: insets.top }]}>
       <View style={s.topBarRow}>
         {back ? (
-          <Pressable accessibilityRole="button" accessibilityLabel="Back" hitSlop={12} onPress={() => router.back()} style={s.back}>
+          <Pressable accessibilityRole="button" accessibilityLabel={t('Back')} hitSlop={12} onPress={() => router.back()} style={s.back}>
             <ChevronLeft size={22} strokeWidth={1.5} color={hex.foreground} />
           </Pressable>
         ) : null}

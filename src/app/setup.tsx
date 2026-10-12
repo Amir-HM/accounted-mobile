@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '@/components/ui';
 import { ApiError, listCompanies, type Company } from '@/lib/api';
 import { normalizeServerUrl, saveConnection } from '@/lib/connection';
+import { tr, useT } from '@/lib/i18n';
 import { signInWithAccounted } from '@/lib/oauth';
 import { colors, fonts, radius, space, type, useHex } from '@/lib/theme';
 
@@ -18,7 +19,7 @@ function chooseCompany(companies: Company[]): Promise<Company | null> {
   if (companies.length === 1) return Promise.resolve(companies[0]);
   return new Promise((resolve) =>
     ActionSheetIOS.showActionSheetWithOptions(
-      { title: 'Which company?', options: [...companies.map((c) => c.name), 'Cancel'], cancelButtonIndex: companies.length },
+      { title: tr('Which company?'), options: [...companies.map((c) => c.name), tr('Cancel')], cancelButtonIndex: companies.length },
       (i) => resolve(i < companies.length ? companies[i] : null),
     ),
   );
@@ -27,6 +28,7 @@ function chooseCompany(companies: Company[]): Promise<Company | null> {
 /** One-way door: once connected, the root stack swaps this route out (Stack.Protected). */
 export default function Setup() {
   const hex = useHex();
+  const t = useT();
   const server = useRef(DEFAULT_SERVER);
   // Development only: a key passed to the dev server's environment, so the simulator can connect without typing.
   const key = useRef(__DEV__ ? (process.env.EXPO_PUBLIC_DEV_API_KEY ?? '') : '');
@@ -38,14 +40,14 @@ export default function Setup() {
     try {
       return normalizeServerUrl(server.current);
     } catch {
-      setError('Enter the address you use to open Accounted, for example accounted.example.com.');
+      setError(t('Enter the address you use to open Accounted, for example accounted.example.com.'));
       return null;
     }
   }
 
   async function finish(serverUrl: string, apiKey: string) {
     const companies = await listCompanies({ serverUrl, apiKey });
-    if (companies.length === 0) throw new ApiError(403, 'NO_COMPANY', 'This account has no company the app can read.');
+    if (companies.length === 0) throw new ApiError(403, 'NO_COMPANY', t('This account has no company the app can read.'));
     const company = await chooseCompany(companies);
     if (!company) return;
     await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -54,10 +56,10 @@ export default function Setup() {
 
   function fail(e: unknown) {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-    if (e instanceof ApiError && e.code === 'INSUFFICIENT_SCOPE') setError(`Access is missing a permission. The app needs: ${SCOPES}.`);
+    if (e instanceof ApiError && e.code === 'INSUFFICIENT_SCOPE') setError(t('Access is missing a permission. The app needs: {scopes}.', { scopes: SCOPES }));
     else if (e instanceof ApiError && e.status === 401)
-      setError('The server did not accept the key. Check that it is copied in full and not revoked.');
-    else setError(e instanceof Error ? e.message : 'Could not connect.');
+      setError(t('The server did not accept the key. Check that it is copied in full and not revoked.'));
+    else setError(e instanceof Error ? e.message : t('Could not connect.'));
   }
 
   async function signIn() {
@@ -81,7 +83,7 @@ export default function Setup() {
     if (!serverUrl) return;
     const apiKey = key.current.trim();
     if (!apiKey.startsWith('gnubok_sk_')) {
-      setError('That does not look like an Accounted API key (it starts with gnubok_sk_).');
+      setError(t('That does not look like an Accounted API key (it starts with gnubok_sk_).'));
       return;
     }
     setBusy('key');
@@ -102,7 +104,7 @@ export default function Setup() {
         </Text>
 
         <View style={s.card}>
-          <Field label="Server">
+          <Field label={t('Server')}>
             <TextInput
               style={s.input}
               defaultValue={DEFAULT_SERVER}
@@ -118,7 +120,7 @@ export default function Setup() {
             />
           </Field>
           {useKey ? (
-            <Field label="API key">
+            <Field label={t('API key')}>
               <TextInput
                 style={s.input}
                 placeholder="gnubok_sk_…"
@@ -136,21 +138,21 @@ export default function Setup() {
           ) : null}
           {error ? <Text style={s.error}>{error}</Text> : null}
           {useKey ? (
-            <Button title="Connect" onPress={connectWithKey} busy={busy === 'key'} disabled={!!busy} />
+            <Button title={t('Connect')} onPress={connectWithKey} busy={busy === 'key'} disabled={!!busy} />
           ) : (
-            <Button title="Sign in with Accounted" onPress={signIn} busy={busy === 'signin'} disabled={!!busy} />
+            <Button title={t('Sign in with Accounted')} onPress={signIn} busy={busy === 'signin'} disabled={!!busy} />
           )}
         </View>
 
         <View style={{ alignItems: 'center', gap: space(4) }}>
           <Text style={[type.meta, { textAlign: 'center', lineHeight: 18 }]}>
             {useKey
-              ? `Create a key in Accounted under Settings → API with: ${SCOPES}. It stays in this iPhone’s Keychain.`
-              : 'You sign in on your Accounted server and approve access for this iPhone: receipts, bank transactions and reports.'}
+              ? t('Create a key in Accounted under Settings → API with: {scopes}. It stays in this iPhone’s Keychain.', { scopes: SCOPES })
+              : t('You sign in on your Accounted server and approve access for this iPhone: receipts, bank transactions and reports.')}
           </Text>
           <Button
             variant="link"
-            title={useKey ? 'Sign in with Accounted instead' : 'Use an API key instead'}
+            title={useKey ? t('Sign in with Accounted instead') : t('Use an API key instead')}
             onPress={() => {
               setError(null);
               setUseKey(!useKey);

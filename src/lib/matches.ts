@@ -2,6 +2,7 @@ import * as Haptics from 'expo-haptics';
 
 import type { Transaction } from './api';
 import { suggestPayment } from './checks';
+import { tr } from './i18n';
 import { merchantName } from './merchants';
 import { useHiddenIds, useMissingReceipts } from './queries';
 import { assignTransaction, useCaptures, type Capture } from './queue';
@@ -38,5 +39,5 @@ export function attachMatch({ capture, tx }: ReceiptMatch) {
   const label = merchantName(tx.merchant_name ?? tx.description);
   assignTransaction(capture.id, { id: tx.id, label, amount: tx.amount, currency: tx.currency, date: tx.date });
   Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  showToast(`Receipt attached to ${label}`);
+  showToast(tr('Receipt attached to {name}', { name: label }));
 }

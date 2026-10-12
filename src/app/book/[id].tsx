@@ -10,6 +10,7 @@ import { Attn, Button, Row, SectionLabel, TopBar } from '@/components/ui';
 import { categorize, getTransaction, previewCategorize, type CategorizeArgs } from '@/lib/api';
 import { useConnection } from '@/lib/connection';
 import { formatMoney } from '@/lib/format';
+import { useT, type T } from '@/lib/i18n';
 import { usePref } from '@/lib/prefs';
 import { queryClient, useSuggestions } from '@/lib/queries';
 import { useCaptures } from '@/lib/queue';
@@ -53,12 +54,19 @@ const VATS: { key: Vat; label: string }[] = [
 type Choice = { picked: number | null; category: string | null; account: string | null; vat: Vat | null };
 const EMPTY: Choice = { picked: null, category: null, account: null, vat: null };
 
-const vatLabel = (v?: string | null) => VATS.find((x) => x.key === v)?.label ?? '–';
-const catLabel = (c?: string | null) => CATEGORIES.find((x) => x.key === c)?.label ?? c ?? '–';
+const vatLabel = (t: T, v?: string | null) => {
+  const label = VATS.find((x) => x.key === v)?.label;
+  return label ? t(label) : '–';
+};
+const catLabel = (t: T, c?: string | null) => {
+  const label = CATEGORIES.find((x) => x.key === c)?.label;
+  return label ? t(label) : (c ?? '–');
+};
 
 /** Book one bank payment: the server's proposal, adjustable, confirmed up front. */
 export default function BookPayment() {
   const own = useMerchantNames();
+  const tl = useT();
   const { id } = useLocalSearchParams<{ id: string }>();
   const conn = useConnection();
   const hex = useHex();
@@ -90,9 +98,9 @@ export default function BookPayment() {
   const { picked, category, account, vat } = current;
   const update = (p: Partial<Choice>) => setChoice({ ...current, ...p });
 
-  if (!t) return <View style={{ flex: 1, backgroundColor: colors.background }}><TopBar title="Book payment" back /></View>;
+  if (!t) return <View style={{ flex: 1, backgroundColor: colors.background }}><TopBar title={tl('Book payment')} back /></View>;
   const out = t.amount < 0;
-  const name = merchantName(t.merchant_name ?? t.description, own);
+  const name = merchantName(t.merchant_name ?? t.description, own, tl.lang);
 
   function choose(i: number) {
     const p = sugg.data![i];
@@ -107,14 +115,14 @@ export default function BookPayment() {
 
   function pickCategory() {
     const list = CATEGORIES.filter((c) => c.out === out);
-    ActionSheetIOS.showActionSheetWithOptions({ title: 'Category', options: [...list.map((c) => c.label), 'Cancel'], cancelButtonIndex: list.length }, (i) => {
+    ActionSheetIOS.showActionSheetWithOptions({ title: tl('Category'), options: [...list.map((c) => tl(c.label)), tl('Cancel')], cancelButtonIndex: list.length }, (i) => {
       if (i >= list.length) return;
       update({ picked: null, category: list[i].key, account: null }); // the category decides the account
     });
   }
 
   function pickVat() {
-    ActionSheetIOS.showActionSheetWithOptions({ title: 'VAT', options: [...VATS.map((v) => v.label), 'Cancel'], cancelButtonIndex: VATS.length }, (i) => {
+    ActionSheetIOS.showActionSheetWithOptions({ title: tl('VAT'), options: [...VATS.map((v) => tl(v.label)), tl('Cancel')], cancelButtonIndex: VATS.length }, (i) => {
       if (i < VATS.length) update({ vat: VATS[i].key });
     });
   }
@@ -135,33 +143,35 @@ export default function BookPayment() {
       const amt = Math.abs(t.amount);
       const fmt = (n: number) => formatMoney(n, t.currency);
       if (p?.debit_account && p.credit_account) {
-        const rows = [`${p.debit_account}  debit  ${fmt(amt)}`, `${p.credit_account}  credit  ${fmt(amt)}`];
-        (p.vat_lines ?? []).forEach((v) => rows.push(`${v.account_number}  ${v.debit_amount ? 'debit' : 'credit'}  ${fmt(v.debit_amount || v.credit_amount)}`));
+        const debit = tl('debit');
+        const credit = tl('credit');
+        const rows = [`${p.debit_account}  ${debit}  ${fmt(amt)}`, `${p.credit_account}  ${credit}  ${fmt(amt)}`];
+        (p.vat_lines ?? []).forEach((v) => rows.push(`${v.account_number}  ${v.debit_amount ? debit : credit}  ${fmt(v.debit_amount || v.credit_amount)}`));
         lines = `\n\n${rows.join('\n')}`;
       }
     } catch (e) {
       setBusy(false);
-      return reportActionError(e, 'Booking');
+      return reportActionError(e, tl('Booking'));
     }
     setBusy(false);
     Alert.alert(
-      `Book ${formatMoney(t.amount, t.currency)}?`,
-      `${name}: ${catLabel(category)}, ${vatLabel(vat).toLowerCase()}${capture ? ', receipt attached' : ''}.${lines}\n\nA booked verifikat can only be corrected, not deleted.`,
+      tl('Book {amount}?', { amount: formatMoney(t.amount, t.currency) }),
+      `${name}: ${catLabel(tl, category)}, ${vatLabel(tl, vat).toLowerCase()}${capture ? tl(', receipt attached') : ''}.${lines}\n\n${tl('A booked verifikat can only be corrected, not deleted.')}`,
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: tl('Cancel'), style: 'cancel' },
         {
-          text: 'Book',
+          text: tl('Book'),
           isPreferred: true,
           onPress: async () => {
             setBusy(true);
             try {
               const r = await categorize(conn!, t.id, args);
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              showToast(r.voucher ? `Booked as ${r.voucher}` : 'Booked');
+              showToast(r.voucher ? tl('Booked as {voucher}', { voucher: r.voucher }) : tl('Booked'));
               for (const key of ['to-book', 'tx', 'kpi', 'suggest']) void queryClient.invalidateQueries({ queryKey: [key] });
               router.back();
             } catch (e) {
-              reportActionError(e, 'Booking');
+              reportActionError(e, tl('Booking'));
             } finally {
               setBusy(false);
             }
@@ -173,10 +183,10 @@ export default function BookPayment() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <TopBar title="Book payment" back />
+      <TopBar title={tl('Book payment')} back />
       <ScrollView contentContainerStyle={{ paddingHorizontal: space(4), paddingBottom: space(12) }}>
         <Reveal index={0} style={{ paddingTop: space(8), paddingBottom: space(4), gap: space(2) }}>
-          <Text style={type.label}>{`${t.date.slice(0, 10)} · ${out ? 'Money out' : 'Money in'}`}</Text>
+          <Text style={type.label}>{`${t.date.slice(0, 10)} · ${out ? tl('Money out') : tl('Money in')}`}</Text>
           <Text selectable style={[type.number, { fontSize: 40, lineHeight: 46 }]}>
             {formatMoney(t.amount, t.currency)}
           </Text>
@@ -184,11 +194,11 @@ export default function BookPayment() {
         </Reveal>
 
         {!enabled ? (
-          <Attn>Booking from the phone is off. Turn it on in Settings → Booking when Accounted is where you book.</Attn>
+          <Attn>{tl('Booking from the phone is off. Turn it on in Settings → Booking when Accounted is where you book.')}</Attn>
         ) : null}
 
         <Reveal index={1}>
-          <SectionLabel>Suggested</SectionLabel>
+          <SectionLabel>{tl('Suggested')}</SectionLabel>
           {sugg.isPending ? (
             <Skeleton height={72} style={{ borderRadius: radius.surface }} />
           ) : sugg.data?.length ? (
@@ -197,45 +207,45 @@ export default function BookPayment() {
                 <Pressable key={p.id} onPress={() => choose(i)} style={[st.option, picked === i && st.optionOn]}>
                   <View style={{ flex: 1, gap: 2 }}>
                     <Text style={type.bodyMedium}>{p.label}</Text>
-                    <Text style={type.meta}>{[p.account && `Account ${p.account}`, vatLabel(p.vat_treatment), p.why].filter(Boolean).join(' · ')}</Text>
+                    <Text style={type.meta}>{[p.account && tl('Account {number}', { number: p.account }), vatLabel(tl, p.vat_treatment), p.why].filter(Boolean).join(' · ')}</Text>
                   </View>
                   <Text style={[type.meta, { fontVariant: ['tabular-nums'] }]}>{`${Math.round(p.confidence * 100)}%`}</Text>
                 </Pressable>
               ))}
             </View>
           ) : (
-            <Text style={type.lead}>No suggestion for this one. Choose a category below.</Text>
+            <Text style={type.lead}>{tl('No suggestion for this one. Choose a category below.')}</Text>
           )}
         </Reveal>
 
         <Reveal index={2}>
-          <SectionLabel>Booking</SectionLabel>
-          <Row title="Category" value={catLabel(category)} valueTone={category ? 'default' : 'muted'} onPress={pickCategory} />
-          {account ? <Row title="Account" value={account} valueTone="muted" /> : null}
-          <Row title="VAT" value={vatLabel(vat)} valueTone={vat ? 'default' : 'muted'} onPress={pickVat} last />
+          <SectionLabel>{tl('Booking')}</SectionLabel>
+          <Row title={tl('Category')} value={catLabel(tl, category)} valueTone={category ? 'default' : 'muted'} onPress={pickCategory} />
+          {account ? <Row title={tl('Account')} value={account} valueTone="muted" /> : null}
+          <Row title={tl('VAT')} value={vatLabel(tl, vat)} valueTone={vat ? 'default' : 'muted'} onPress={pickVat} last />
           {reverseHint && vat !== 'reverse_charge' ? (
             <View style={{ paddingTop: space(3) }}>
-              <Attn action="Use reverse charge" onAction={() => update({ vat: 'reverse_charge' })}>
-                The receipt is in a foreign currency with 0% VAT: usually reverse charge.
+              <Attn action={tl('Use reverse charge')} onAction={() => update({ vat: 'reverse_charge' })}>
+                {tl('The receipt is in a foreign currency with 0% VAT: usually reverse charge.')}
               </Attn>
             </View>
           ) : null}
         </Reveal>
 
         <Reveal index={3}>
-          <SectionLabel>Receipt</SectionLabel>
+          <SectionLabel>{tl('Receipt')}</SectionLabel>
           <View style={st.receipt}>
             {capture ? (
               <CircleCheck size={18} strokeWidth={1.5} color={hex.success} />
             ) : (
               <CircleAlert size={18} strokeWidth={1.5} color={hex.attn} />
             )}
-            <Text style={[type.body, { flex: 1 }]}>{capture ? 'Attached from this iPhone' : 'No receipt attached yet'}</Text>
+            <Text style={[type.body, { flex: 1 }]}>{capture ? tl('Attached from this iPhone') : tl('No receipt attached yet')}</Text>
             {!capture ? (
               <Button
                 size="sm"
                 variant="outline"
-                title="Add"
+                title={tl('Add')}
                 onPress={() =>
                   router.push({ pathname: '/add', params: { txId: t.id } })
                 }
@@ -245,7 +255,7 @@ export default function BookPayment() {
         </Reveal>
 
         <View style={{ paddingTop: space(8) }}>
-          <Button title="Book" onPress={book} busy={busy} disabled={!enabled || !category} />
+          <Button title={tl('Book')} onPress={book} busy={busy} disabled={!enabled || !category} />
         </View>
       </ScrollView>
     </View>

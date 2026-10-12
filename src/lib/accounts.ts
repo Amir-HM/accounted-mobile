@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { request, type CashAccount } from './api';
 import { useConnection, type Connection } from './connection';
 import { deviceStore } from './device-store';
+import { getLang, translate, useLang, type Lang } from './i18n';
 
 /**
  * Human names for bank accounts. The cash-account `name` is the account
@@ -82,11 +83,11 @@ export const useNicknames = nicknames.use;
 
 export type NamedAccount = CashAccount & { title: string; bank: string | null; ledgerName: string | null };
 
-export function nameAccount(a: CashAccount, ledger: Record<string, string> | undefined, nicks: Record<string, string>): NamedAccount {
+export function nameAccount(a: CashAccount, ledger: Record<string, string> | undefined, nicks: Record<string, string>, lang: Lang = getLang()): NamedAccount {
   const bank = bankFromIban(a.iban);
   const ledgerName = ledger?.[a.ledger_account] ?? null;
   const specific = ledgerName && !GENERIC.has(ledgerName) ? ledgerName : null;
-  const title = nicks[a.cash_account_id] ?? specific ?? (bank ? `${bank} ${a.currency}` : `Account ${a.ledger_account}`);
+  const title = nicks[a.cash_account_id] ?? specific ?? (bank ? `${bank} ${a.currency}` : translate(lang, 'Account {number}', { number: a.ledger_account }));
   return { ...a, title, bank, ledgerName };
 }
 
@@ -94,7 +95,8 @@ export function nameAccount(a: CashAccount, ledger: Record<string, string> | und
 export function useNamedAccounts(list: CashAccount[] | undefined) {
   const ledger = useLedgerNames();
   const nicks = useNicknames();
+  const lang = useLang();
   return (list ?? [])
-    .map((a) => nameAccount(a, ledger.data, nicks))
+    .map((a) => nameAccount(a, ledger.data, nicks, lang))
     .sort((a, b) => Number(!!b.balance) - Number(!!a.balance) || Number(b.is_primary) - Number(a.is_primary));
 }

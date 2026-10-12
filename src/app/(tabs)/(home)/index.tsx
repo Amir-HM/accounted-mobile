@@ -12,19 +12,22 @@ import { useNamedAccounts } from '@/lib/accounts';
 import { useReceiptMatches } from '@/lib/matches';
 import { ApiError, type Kpi } from '@/lib/api';
 import { useConnection } from '@/lib/connection';
-import { formatMoney, formatMoneyShort, localDate, maskIban } from '@/lib/format';
+import { dateFormat, formatMoney, formatMoneyShort, localDate, maskIban } from '@/lib/format';
+import { capitalize, useT, type T } from '@/lib/i18n';
 import { usePref } from '@/lib/prefs';
 import { bankNeedsAttention, isOverdue, useBankConnections, useCashAccounts, useInvoices, useSupplierInvoicesToApprove, useCurrentKpi, useHiddenIds, useMissingReceipts, usePendingOps, useToBook } from '@/lib/queries';
 import { pendingCount, useCaptures } from '@/lib/queue';
 import { colors, fonts, radius, space, type, useHex } from '@/lib/theme';
 
 const STALE_HOURS = 36;
-const today = new Intl.DateTimeFormat('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
 
-function greeting(now = new Date()) {
+function greeting(t: T, now = new Date()) {
   const h = now.getHours();
-  return h < 5 ? 'Good evening.' : h < 10 ? 'Good morning.' : h < 18 ? 'Good day.' : 'Good evening.';
+  return h < 5 ? t('Good evening.') : h < 10 ? t('Good morning.') : h < 18 ? t('Good day.') : t('Good evening.');
 }
+
+/** "Monday 12 October" / "Måndag 12 oktober". */
+const todayLabel = (t: T) => capitalize(dateFormat(t.lang, 'weekdayDay', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date()));
 
 /** "2025/2026", or "2026" when the fiscal year is the calendar year: the web's year label. */
 function fiscalYearLabel(start: string, end: string) {
@@ -40,14 +43,15 @@ function monthsSoFar(k: Kpi) {
 }
 
 /** "Covers roughly N days of expenses", the web KPI caption. */
-function runway(k: Kpi) {
+function runway(k: Kpi, t: T) {
   const days = Math.max(1, (Date.now() - new Date(`${k.period.start}T00:00:00`).getTime()) / 86400_000);
   const perDay = k.totalExpenses / days;
-  if (perDay <= 0 || k.cashPosition <= 0) return 'In the books, all bank accounts';
-  return `Covers roughly ${Math.round(k.cashPosition / perDay)} days of expenses`;
+  if (perDay <= 0 || k.cashPosition <= 0) return t('In the books, all bank accounts');
+  return t('Covers roughly {days} days of expenses', { days: Math.round(k.cashPosition / perDay) });
 }
 
 export default function Overview() {
+  const t = useT();
   const conn = useConnection();
   const insets = useSafeAreaInsets();
   const [now] = useState(() => Date.now()); // read once per visit, not on every render
@@ -83,14 +87,14 @@ export default function Overview() {
   const overdueInvoices = unpaidInvoices.filter((i) => isOverdue(i, todayIso));
 
   const todos: Todo[] = [];
-  if (matches.length) todos.push({ key: 'matches', label: `${matches.length} to attach`, icon: Link2, tone: 'attn', onPress: () => router.navigate('/receipts') });
-  if (missingCount) todos.push({ key: 'missing', label: `${missingCount} receipt${missingCount === 1 ? '' : 's'}`, icon: FileWarning, tone: 'attn', onPress: () => router.navigate('/receipts') });
-  if (approvals) todos.push({ key: 'approvals', label: `${approvals} to approve`, icon: Bot, tone: 'attn', onPress: () => router.push('/approvals') });
-  if (brokenBanks.length) todos.push({ key: 'banks', label: brokenBanks.length === 1 ? (brokenBanks[0].bank ?? 'Bank') : `${brokenBanks.length} banks`, icon: Landmark, tone: 'attn', onPress: () => router.push('/banks') });
-  if (overdueInvoices.length) todos.push({ key: 'overdue', label: `${overdueInvoices.length} overdue`, icon: FileText, tone: 'attn', onPress: () => router.push('/invoices') });
-  if (bookOn && toBook.data?.length) todos.push({ key: 'book', label: `${toBook.data.length} to book`, icon: ArrowLeftRight, onPress: () => router.push('/to-book') });
-  if (failed) todos.push({ key: 'failed', label: `${failed} upload${failed === 1 ? '' : 's'} failed`, icon: Upload, tone: 'error', onPress: () => router.navigate('/receipts') });
-  else if (uploading) todos.push({ key: 'uploading', label: `Uploading ${uploading}`, icon: Upload, onPress: () => router.navigate('/receipts') });
+  if (matches.length) todos.push({ key: 'matches', label: t('{n} to attach', { n: matches.length }), icon: Link2, tone: 'attn', onPress: () => router.navigate('/receipts') });
+  if (missingCount) todos.push({ key: 'missing', label: t(missingCount === 1 ? '{n} receipt' : '{n} receipts', { n: missingCount }), icon: FileWarning, tone: 'attn', onPress: () => router.navigate('/receipts') });
+  if (approvals) todos.push({ key: 'approvals', label: t('{n} to approve', { n: approvals }), icon: Bot, tone: 'attn', onPress: () => router.push('/approvals') });
+  if (brokenBanks.length) todos.push({ key: 'banks', label: brokenBanks.length === 1 ? (brokenBanks[0].bank ?? t('Bank')) : t('{n} banks', { n: brokenBanks.length }), icon: Landmark, tone: 'attn', onPress: () => router.push('/banks') });
+  if (overdueInvoices.length) todos.push({ key: 'overdue', label: t('{n} overdue', { n: overdueInvoices.length }), icon: FileText, tone: 'attn', onPress: () => router.push('/invoices') });
+  if (bookOn && toBook.data?.length) todos.push({ key: 'book', label: t('{n} to book', { n: toBook.data.length }), icon: ArrowLeftRight, onPress: () => router.push('/to-book') });
+  if (failed) todos.push({ key: 'failed', label: t(failed === 1 ? '{n} upload failed' : '{n} uploads failed', { n: failed }), icon: Upload, tone: 'error', onPress: () => router.navigate('/receipts') });
+  else if (uploading) todos.push({ key: 'uploading', label: t('Uploading {n}', { n: uploading }), icon: Upload, onPress: () => router.navigate('/receipts') });
 
   const refreshing = accounts.isRefetching || kpi.isRefetching || missing.isRefetching;
   const refresh = () => Promise.all([accounts.refetch(), kpi.refetch(), missing.refetch()]);
@@ -112,18 +116,20 @@ export default function Overview() {
           <View style={{ gap: space(2) }}>
             <View style={st.greetingRow}>
               <Text style={[type.display, { flex: 1 }]} numberOfLines={1} adjustsFontSizeToFit>
-                {greeting()}
+                {greeting(t)}
               </Text>
-              <Button size="sm" icon={ScanLine} title="Scan" onPress={() => captureUnlinked('scan')} />
+              <Button size="sm" icon={ScanLine} title={t('Scan')} onPress={() => captureUnlinked('scan')} />
             </View>
-            <Text style={type.meta}>{`${today.format(new Date())} · ${conn?.companyName ?? ''}`}</Text>
+            <Text style={type.meta}>{`${todayLabel(t)} · ${conn?.companyName ?? ''}`}</Text>
           </View>
           {error ? (
-            <Attn action="Try again" onAction={refresh}>
+            <Attn action={t('Try again')} onAction={refresh}>
               {error.message}
             </Attn>
           ) : staleHours >= STALE_HOURS && !brokenBanks.length ? (
-            <Attn action="See banks" onAction={() => router.push('/banks')}>{`The bank has not synced for ${Math.round(staleHours / 24)} days.`}</Attn>
+            <Attn action={t('See banks')} onAction={() => router.push('/banks')}>
+              {t('The bank has not synced for {n} days.', { n: Math.round(staleHours / 24) })}
+            </Attn>
           ) : null}
         </Reveal>
 
@@ -135,7 +141,7 @@ export default function Overview() {
             ) : missing.isPending ? (
               <Skeleton width={140} height={36} style={{ borderRadius: 18 }} />
             ) : (
-              <TodoPill key="done" label="All done" tone="done" icon={CircleCheck} onPress={() => router.navigate('/receipts')} />
+              <TodoPill key="done" label={t('All done')} tone="done" icon={CircleCheck} onPress={() => router.navigate('/receipts')} />
             )}
           </ScrollView>
         </Reveal>
@@ -144,23 +150,23 @@ export default function Overview() {
         {k ? (
           <>
             <Reveal index={2} style={{ paddingTop: space(8), gap: space(2) }}>
-              <Text style={type.label}>Cash</Text>
+              <Text style={type.label}>{t('Cash')}</Text>
               <Text selectable style={[type.number, { fontSize: 44, lineHeight: 50 }]}>
                 {formatMoney(k.cashPosition)}
               </Text>
-              <Text style={type.meta}>{runway(k)}</Text>
+              <Text style={type.meta}>{runway(k, t)}</Text>
             </Reveal>
 
             <Reveal index={3} style={st.grid}>
               <Tile
-                label="Result"
+                label={t('Result')}
                 value={formatMoneyShort(k.netResult)}
                 tone={k.netResult < 0 ? 'negative' : undefined}
                 tag={fy}
               />
-              <Tile label="VAT" value={formatMoneyShort(k.vatLiability)} caption="to pay" onPress={() => router.push('/vat')} />
-              <Tile label="Revenue" value={formatMoneyShort(k.totalRevenue)} tag={fy} />
-              <Tile label="Expenses" value={formatMoneyShort(k.totalExpenses)} tag={fy} />
+              <Tile label={t('VAT')} value={formatMoneyShort(k.vatLiability)} caption={t('to pay')} onPress={() => router.push('/vat')} />
+              <Tile label={t('Revenue')} value={formatMoneyShort(k.totalRevenue)} tag={fy} />
+              <Tile label={t('Expenses')} value={formatMoneyShort(k.totalExpenses)} tag={fy} />
             </Reveal>
 
             <Reveal index={4} style={{ paddingTop: space(8) }}>
@@ -183,7 +189,7 @@ export default function Overview() {
         {/* Bank */}
         {list.length ? (
           <Reveal index={5} style={{ paddingTop: space(6) }}>
-            <SectionLabel right={latest ? `updated ${relativeHours(staleHours)}` : undefined}>Bank accounts</SectionLabel>
+            <SectionLabel right={latest ? t('updated {when}', { when: relativeHours(staleHours, t) }) : undefined}>{t('Bank accounts')}</SectionLabel>
             {list.map((a, i) => (
               <Row
                 key={a.cash_account_id}
@@ -200,23 +206,30 @@ export default function Overview() {
 
         {/* More from the books */}
         <Reveal index={6} style={{ paddingTop: space(6) }}>
-          <SectionLabel>More</SectionLabel>
+          <SectionLabel>{t('More')}</SectionLabel>
           <Row
             icon={FileText}
-            title="Invoices"
+            title={t('Invoices')}
             meta={
               invoices.error instanceof ApiError && invoices.error.code === 'INSUFFICIENT_SCOPE'
-                ? 'Sign in again to see them'
+                ? t('Sign in again to see them')
                 : invoices.data
                 ? unpaidInvoices.length
-                  ? `${unpaidInvoices.length} unpaid${overdueInvoices.length ? ` · ${overdueInvoices.length} overdue` : ''}`
-                  : 'Nothing outstanding'
+                  ? [t('{n} unpaid', { n: unpaidInvoices.length }), overdueInvoices.length ? t('{n} overdue', { n: overdueInvoices.length }) : null]
+                      .filter(Boolean)
+                      .join(' · ')
+                  : t('Nothing outstanding')
                 : undefined
             }
             onPress={() => router.push('/invoices')}
           />
-          <Row icon={Landmark} title="Bank connections" meta={banks.data ? (brokenBanks.length ? 'Needs attention' : 'All connected') : undefined} onPress={() => router.push('/banks')} />
-          <Row icon={Percent} title="VAT return" meta="This period so far" onPress={() => router.push('/vat')} last />
+          <Row
+            icon={Landmark}
+            title={t('Bank connections')}
+            meta={banks.data ? (brokenBanks.length ? t('Needs attention') : t('All connected')) : undefined}
+            onPress={() => router.push('/banks')}
+          />
+          <Row icon={Percent} title={t('VAT return')} meta={t('This period so far')} onPress={() => router.push('/vat')} last />
         </Reveal>
       </ScrollView>
     </View>
@@ -267,10 +280,10 @@ function Tile({
   );
 }
 
-function relativeHours(h: number) {
-  if (h < 1) return 'just now';
-  if (h < 48) return `${h} h ago`;
-  return `${Math.round(h / 24)} days ago`;
+function relativeHours(h: number, t: T) {
+  if (h < 1) return t('just now');
+  if (h < 48) return t('{n} h ago', { n: h });
+  return t('{n} days ago', { n: Math.round(h / 24) });
 }
 
 const st = StyleSheet.create({

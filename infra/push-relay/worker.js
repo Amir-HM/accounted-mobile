@@ -20,7 +20,7 @@ const json = (body, status = 200) => new Response(JSON.stringify(body), { status
 
 /**
  * All relay state in one KV value, written only when it changes:
- * { devices: [{ token, at, private }], seen: [txId], seenOps: [opId], bootstrapped }.
+ * { devices: [{ token, at, private, lang }], seen: [txId], seenOps: [opId], bootstrapped }.
  * Reads the older one-key-per-field layout once, on the first run after an upgrade.
  */
 async function load(env) {
@@ -56,9 +56,32 @@ async function authorized(request, env) {
 const money = (amount, currency) =>
   new Intl.NumberFormat('sv-SE', { style: 'currency', currency: currency || 'SEK' }).format(amount);
 
-function tidy(s) {
+/**
+ * What the lock screen says, in the phone's language. The app sends `lang`
+ * when it registers; a phone registered by an older build (no `lang`) had an
+ * English app, so it keeps English.
+ */
+const TEXT = {
+  en: {
+    cardPayment: 'Card payment',
+    snapTitle: 'Snap the receipt',
+    snapPrivate: 'A card payment needs its receipt',
+    approvalTitle: 'Waiting for your approval',
+    approvalPrivate: 'Something is waiting for your approval',
+  },
+  sv: {
+    cardPayment: 'Kortbetalning',
+    snapTitle: 'Fota kvittot',
+    snapPrivate: 'En kortbetalning behöver sitt kvitto',
+    approvalTitle: 'Väntar på ditt godkännande',
+    approvalPrivate: 'Något väntar på ditt godkännande',
+  },
+};
+const textFor = (d) => (d.lang === 'sv' ? TEXT.sv : TEXT.en);
+
+function tidy(s, fallback) {
   s = (s || '').trim();
-  if (!s) return 'Card payment';
+  if (!s) return fallback;
   if (s === s.toUpperCase() && /[A-ZÅÄÖ]{3}/.test(s)) s = s.toLowerCase().replace(/(^|[\s*./-])([a-zåäö])/g, (_, p, c) => p + c.toUpperCase());
   return s;
 }
@@ -135,9 +158,11 @@ async function poll(env) {
       ...newPayments.flatMap((t) =>
         devices.map((d) => ({
           to: d.token,
-          title: 'Snap the receipt',
+          title: textFor(d).snapTitle,
           // A phone that asked for privacy gets no merchant or amount on the lock screen.
-          body: d.private ? 'A card payment needs its receipt' : `${tidy(t.merchant_name || t.description)} · ${money(t.amount, t.currency)}`,
+          body: d.private
+            ? textFor(d).snapPrivate
+            : `${tidy(t.merchant_name || t.description, textFor(d).cardPayment)} · ${money(t.amount, t.currency)}`,
           data: { url: `/payment/${t.id}`, transactionId: t.id },
           categoryId: 'payment', // Scan receipt / Later buttons, registered by the app
           sound: 'default',
@@ -146,8 +171,8 @@ async function poll(env) {
       ...newOps.flatMap((o) =>
         devices.map((d) => ({
           to: d.token,
-          title: 'Waiting for your approval',
-          body: d.private ? 'Something is waiting for your approval' : `${o.actor_label ? `${o.actor_label}: ` : ''}${o.title}`,
+          title: textFor(d).approvalTitle,
+          body: d.private ? textFor(d).approvalPrivate : `${o.actor_label ? `${o.actor_label}: ` : ''}${o.title}`,
           data: { url: '/approvals', operationId: o.id },
           sound: 'default',
         })),
@@ -173,7 +198,7 @@ export default {
     const others = state.devices.filter((d) => d.token !== token && fresh(d));
     state.devices =
       url.pathname === '/register'
-        ? [...others, { token, at: new Date().toISOString(), private: body.private === true }].slice(-MAX_DEVICES) // newest kept
+        ? [...others, { token, at: new Date().toISOString(), private: body.private === true, lang: body.lang === 'sv' ? 'sv' : 'en' }].slice(-MAX_DEVICES) // newest kept
         : others;
     await save(env, raw, state);
     return json({ ok: true, devices: state.devices.length });
