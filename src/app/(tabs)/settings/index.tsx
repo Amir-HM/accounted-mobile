@@ -7,7 +7,7 @@ import { ActionSheetIOS, ActivityIndicator, Alert, ScrollView, StyleSheet, Switc
 import { Row, SectionLabel, TopBar } from '@/components/ui';
 import { clearConnection, useConnection } from '@/lib/connection';
 import { setPref, usePref, type PrefKey } from '@/lib/prefs';
-import { disablePush, enablePush, usePushEnabled } from '@/lib/push';
+import { disablePush, enablePush, updatePushPrivacy, usePushEnabled } from '@/lib/push';
 import { LOOKBACK_OPTIONS, lookbackLabel, queryClient, setLookbackDays, useLookbackDays } from '@/lib/queries';
 import { pendingCount, useCaptures } from '@/lib/queue';
 import { colors, space, type, useHex } from '@/lib/theme';
@@ -19,6 +19,7 @@ export default function Settings() {
   const days = useLookbackDays();
   const push = usePushEnabled();
   const faceId = usePref('faceIdLock');
+  const privatePush = usePref('privatePush');
   const [pushBusy, setPushBusy] = useState(false);
   if (!conn) return null;
   const waiting = pendingCount(captures);
@@ -48,9 +49,21 @@ export default function Settings() {
       'Disconnect this iPhone?',
       waiting
         ? `${waiting} receipt${waiting === 1 ? ' has' : 's have'} not finished uploading and will wait until you connect again.`
-        : 'This iPhone forgets its access. Revoke it in Accounted on the web under Settings → API keys if you no longer need it.',
+        : `This iPhone forgets its access. The key itself (${conn!.apiKey.slice(0, 11)}…) stays valid until it is revoked in Accounted.`,
       [
         { text: 'Cancel', style: 'cancel' },
+        {
+          // Accounted has no way for a key to revoke itself yet, so open the page where you can.
+          text: 'Disconnect and revoke on the web',
+          style: 'destructive',
+          onPress: async () => {
+            const server = conn!.serverUrl;
+            await disablePush(conn);
+            queryClient.clear();
+            await clearConnection();
+            await WebBrowser.openBrowserAsync(`${server}/settings/api`);
+          },
+        },
         {
           text: 'Disconnect',
           style: 'destructive',
@@ -101,8 +114,25 @@ export default function Settings() {
           value={push}
           onChange={togglePush}
           busy={pushBusy}
-          last
+          last={!push}
         />
+        {push ? (
+          <SwitchRow
+            title="Hide amounts on the lock screen"
+            meta="Notifications say a payment needs its receipt, without the merchant or amount"
+            value={privatePush}
+            onChange={async (v) => {
+              setPref('privatePush', v);
+              try {
+                await updatePushPrivacy(conn);
+              } catch (e) {
+                setPref('privatePush', !v);
+                Alert.alert('Notifications', e instanceof Error ? e.message : String(e));
+              }
+            }}
+            last
+          />
+        ) : null}
 
         <SectionLabel>Security</SectionLabel>
         <SwitchRow title="Face ID lock" meta="Ask after a minute away" value={faceId} onChange={toggleFaceId} />

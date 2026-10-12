@@ -1,8 +1,8 @@
 import { booleanCodec, deviceStore, type DeviceStore } from './device-store';
 
 /** Small device-local preferences (booleans), observable from components. */
-export type PrefKey = 'faceIdLock' | 'privacyCover' | 'pushPrimed' | 'openOnScanner' | 'bookInAccounted';
-const DEFAULTS: Record<PrefKey, boolean> = { faceIdLock: false, privacyCover: true, pushPrimed: false, openOnScanner: false, bookInAccounted: false };
+export type PrefKey = 'faceIdLock' | 'privacyCover' | 'pushPrimed' | 'openOnScanner' | 'bookInAccounted' | 'privatePush';
+const DEFAULTS: Record<PrefKey, boolean> = { faceIdLock: false, privacyCover: true, pushPrimed: false, openOnScanner: false, bookInAccounted: false, privatePush: false };
 
 const stores = Object.fromEntries(
   (Object.keys(DEFAULTS) as PrefKey[]).map((k) => [k, deviceStore(`accounted.pref.${k}`, DEFAULTS[k], booleanCodec)]),

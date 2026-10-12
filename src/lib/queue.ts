@@ -2,6 +2,7 @@ import * as Crypto from 'expo-crypto';
 import { Directory, File, Paths, UploadType } from 'expo-file-system';
 import Storage from 'expo-sqlite/kv-store';
 import { useSyncExternalStore } from 'react';
+import { AppState } from 'react-native';
 
 import { ApiError, attachDocument, documentsUrl, request, type UploadedDocument } from './api';
 import { verify } from './checks';
@@ -61,7 +62,11 @@ const KEY = 'accounted.captures';
 const MAX_BYTES = 10 * 1024 * 1024; // server limit (DOC_UPLOAD_TOO_LARGE)
 const KEEP_DAYS = 30;
 
+// Waiting to upload: Documents, which iOS backs up, so a receipt is never lost
+// before the server has it. Archived on the server: Caches, which iOS never
+// backs up, so receipts do not end up in iCloud backups.
 const dir = new Directory(Paths.document, 'captures');
+const archivedDir = new Directory(Paths.cache, 'captures');
 
 let items: Capture[] = (() => {
   try {
@@ -72,23 +77,43 @@ let items: Capture[] = (() => {
 })();
 const listeners = new Set<() => void>();
 
-function commit(next: Capture[]) {
-  items = next;
+// Writing the whole queue is a synchronous JSON write: progress-only changes are
+// batched, everything that matters (a new receipt, an archive, an attach, a
+// claim) is written at once.
+let pendingWrite: ReturnType<typeof setTimeout> | null = null;
+function persist() {
+  if (pendingWrite) clearTimeout(pendingWrite);
+  pendingWrite = null;
   Storage.setItemSync(KEY, JSON.stringify(items));
+}
+AppState.addEventListener('change', (s) => s !== 'active' && pendingWrite && persist());
+
+function commit(next: Capture[], deferWrite = false) {
+  items = next;
+  if (!deferWrite) persist();
+  else if (!pendingWrite) pendingWrite = setTimeout(persist, 400);
   listeners.forEach((l) => l());
 }
+
+const PROGRESS_ONLY = new Set(['state', 'attempts', 'error', 'nextAttemptAt']);
 function patch(id: string, p: Partial<Capture>) {
-  commit(items.map((c) => (c.id === id ? { ...c, ...p } : c)));
+  const progressOnly = Object.keys(p).every((k) => PROGRESS_ONLY.has(k)) && (p.state === undefined || p.state === 'uploading' || p.state === 'attaching');
+  commit(
+    items.map((c) => (c.id === id ? { ...c, ...p } : c)),
+    progressOnly,
+  );
 }
 
+function subscribe(l: () => void) {
+  listeners.add(l);
+  return () => {
+    listeners.delete(l);
+  };
+}
+const snapshot = () => items;
+
 export function useCaptures(): Capture[] {
-  return useSyncExternalStore(
-    (l) => {
-      listeners.add(l);
-      return () => listeners.delete(l);
-    },
-    () => items,
-  );
+  return useSyncExternalStore(subscribe, snapshot);
 }
 
 // Upload progress lives in memory only (0..1 per capture id); a restart simply shows "Waiting".
@@ -109,13 +134,34 @@ export function useUploadProgress(id: string): number | null {
   );
 }
 
-export const captureFile = (c: Capture) => new File(dir, ...c.localName.split('/'));
+export const captureFile = (c: Capture) => {
+  const parts = c.localName.split('/');
+  const archived = new File(archivedDir, ...parts);
+  return archived.exists ? archived : new File(dir, ...parts);
+};
+
+/** Once the server has the receipt: move the local copy out of what iOS backs up. */
+function moveToArchived(c: Capture) {
+  try {
+    const from = new File(dir, ...c.localName.split('/'));
+    if (!from.exists) return;
+    const folder = new Directory(archivedDir, c.id);
+    if (!folder.exists) folder.create({ intermediates: true });
+    from.move(new File(folder, from.name));
+    const old = new Directory(dir, c.id);
+    if (old.exists && old.list().length === 0) old.delete();
+  } catch {
+    // Not moved is not lost: the file stays where it was.
+  }
+}
 
 function removeLocal(c: Capture) {
   const f = captureFile(c);
   if (f.exists) f.delete();
-  const folder = new Directory(dir, c.id);
-  if (c.localName.includes('/') && folder.exists) folder.delete();
+  for (const root of [dir, archivedDir]) {
+    const folder = new Directory(root, c.id);
+    if (c.localName.includes('/') && folder.exists) folder.delete();
+  }
 }
 
 function hex(buf: ArrayBuffer): string {
@@ -315,6 +361,7 @@ async function work() {
         patch(c.id, { attachedAt: new Date().toISOString() });
       }
       patch(c.id, { state: 'done', error: undefined, nextAttemptAt: undefined, uploadUrl: undefined });
+      moveToArchived(c);
       const latest = items.find((x) => x.id === c.id);
       const v = verify(latest?.extraction, c.transaction);
       showToast(
@@ -345,6 +392,8 @@ async function work() {
 }
 
 function prune() {
+  // Receipts archived before this moved to Caches (moveToArchived is a no-op once moved).
+  items.filter((c) => c.state === 'done').forEach(moveToArchived);
   const cutoff = Date.now() - KEEP_DAYS * 86400_000;
   const old = items.filter((c) => c.state === 'done' && new Date(c.createdAt).getTime() < cutoff);
   if (!old.length) return;

@@ -20,7 +20,7 @@ const json = (body, status = 200) => new Response(JSON.stringify(body), { status
 
 /**
  * All relay state in one KV value, written only when it changes:
- * { devices: [{ token, at }], seen: [txId], seenOps: [opId], bootstrapped }.
+ * { devices: [{ token, at, private }], seen: [txId], seenOps: [opId], bootstrapped }.
  * Reads the older one-key-per-field layout once, on the first run after an upgrade.
  */
 async function load(env) {
@@ -129,24 +129,25 @@ async function poll(env) {
     return { notified: 0, bootstrap: newPayments.length };
   }
 
-  const to = state.devices.map((d) => d.token);
-  if (to.length && (newPayments.length || newOps.length)) {
+  const devices = state.devices;
+  if (devices.length && (newPayments.length || newOps.length)) {
     const messages = [
       ...newPayments.flatMap((t) =>
-        to.map((token) => ({
-          to: token,
+        devices.map((d) => ({
+          to: d.token,
           title: 'Snap the receipt',
-          body: `${tidy(t.merchant_name || t.description)} · ${money(t.amount, t.currency)}`,
+          // A phone that asked for privacy gets no merchant or amount on the lock screen.
+          body: d.private ? 'A card payment needs its receipt' : `${tidy(t.merchant_name || t.description)} · ${money(t.amount, t.currency)}`,
           data: { url: `/payment/${t.id}`, transactionId: t.id },
           categoryId: 'payment', // Scan receipt / Later buttons, registered by the app
           sound: 'default',
         })),
       ),
       ...newOps.flatMap((o) =>
-        to.map((token) => ({
-          to: token,
+        devices.map((d) => ({
+          to: d.token,
           title: 'Waiting for your approval',
-          body: `${o.actor_label ? `${o.actor_label}: ` : ''}${o.title}`,
+          body: d.private ? 'Something is waiting for your approval' : `${o.actor_label ? `${o.actor_label}: ` : ''}${o.title}`,
           data: { url: '/approvals', operationId: o.id },
           sound: 'default',
         })),
@@ -172,7 +173,7 @@ export default {
     const others = state.devices.filter((d) => d.token !== token && fresh(d));
     state.devices =
       url.pathname === '/register'
-        ? [...others, { token, at: new Date().toISOString() }].slice(-MAX_DEVICES) // newest kept
+        ? [...others, { token, at: new Date().toISOString(), private: body.private === true }].slice(-MAX_DEVICES) // newest kept
         : others;
     await save(env, raw, state);
     return json({ ok: true, devices: state.devices.length });

@@ -4,6 +4,7 @@ import * as Notifications from 'expo-notifications';
 
 import type { Connection } from './connection';
 import { deviceStore, stringCodec } from './device-store';
+import { getPref } from './prefs';
 
 /**
  * "Snap the receipt" notifications. The relay (infra/push-relay) watches the
@@ -22,7 +23,8 @@ async function relay(path: '/register' | '/unregister', conn: Connection, t: str
   const r = await fetch(`${PUSH_RELAY}${path}`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${conn.apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token: t }),
+    // private: the relay leaves merchant and amount out of what the lock screen shows.
+    body: JSON.stringify({ token: t, private: getPref('privatePush') }),
   });
   if (!r.ok) throw new Error(r.status === 401 ? 'The notification service did not accept this account.' : `Could not reach the notification service (${r.status}).`);
 }
@@ -56,4 +58,10 @@ export async function refreshPushRegistration(conn: Connection): Promise<void> {
   const perms = await Notifications.getPermissionsAsync();
   if (!perms.granted) return;
   await relay('/register', conn, t).catch(() => {});
+}
+
+/** Re-register with the new lock-screen preference, if notifications are on. */
+export async function updatePushPrivacy(conn: Connection): Promise<void> {
+  const t = token.get();
+  if (t && PUSH_RELAY) await relay('/register', conn, t);
 }

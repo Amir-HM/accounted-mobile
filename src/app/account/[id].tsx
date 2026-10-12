@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import { router, useLocalSearchParams } from 'expo-router';
 import { FileWarning, Pencil } from 'lucide-react-native';
@@ -10,7 +10,7 @@ import { Attn, Button, Row, SectionLabel, TopBar } from '@/components/ui';
 import { nameAccount, setNickname, useLedgerNames, useNicknames } from '@/lib/accounts';
 import { listTransactionsSince, type TransactionRow } from '@/lib/api';
 import { useConnection } from '@/lib/connection';
-import { formatMoney, formatRelative, maskIban } from '@/lib/format';
+import { formatMoney, formatRelative, localDate, maskIban } from '@/lib/format';
 import { useCashAccounts, useMissingReceipts } from '@/lib/queries';
 import { showToast } from '@/lib/toast';
 import { colors, fonts, radius, space, type, useHex } from '@/lib/theme';
@@ -29,24 +29,30 @@ export default function AccountScreen() {
   const ledger = useLedgerNames();
   const nicks = useNicknames();
   const missing = useMissingReceipts();
-  const [days, setDays] = useState(STEP_DAYS);
   const [showIban, setShowIban] = useState(false);
   const [now] = useState(() => Date.now()); // read once per visit, not on every render
 
   const raw = accounts.data?.find((a) => a.cash_account_id === id);
   const a = raw ? nameAccount(raw, ledger.data, nicks) : undefined;
 
-  const since = new Date(now - days * 86400_000).toISOString().slice(0, 10);
-  const txs = useQuery({
-    queryKey: ['account-tx', conn?.serverUrl, id, days],
-    queryFn: () => listTransactionsSince(conn!, since, id),
+  // One window of STEP_DAYS per page: Show older fetches only the next window, not everything again.
+  const day = (offset: number) => localDate(new Date(now - offset * 86400_000));
+  const txs = useInfiniteQuery({
+    queryKey: ['account-tx', conn?.serverUrl, id],
+    initialPageParam: 0,
+    queryFn: ({ pageParam, signal }) =>
+      listTransactionsSince(conn!, day((pageParam + 1) * STEP_DAYS), id, {
+        signal,
+        ...(pageParam > 0 ? { dateTo: day(pageParam * STEP_DAYS + 1) } : {}),
+      }),
+    getNextPageParam: (_last, pages) => pages.length,
     enabled: !!conn,
-    placeholderData: (prev) => prev,
   });
+  const days = (txs.data?.pages.length ?? 1) * STEP_DAYS;
 
-  const rows = [...(txs.data ?? [])].sort((x, y) => y.date.localeCompare(x.date));
+  const rows = (txs.data?.pages.flat() ?? []).sort((x, y) => y.date.localeCompare(x.date));
   const missingIds = new Set((missing.data ?? []).map((t) => t.id));
-  const thisMonth = new Date().toISOString().slice(0, 7);
+  const thisMonth = localDate().slice(0, 7);
   const inMonth = rows.filter((t) => t.date.startsWith(thisMonth));
   const moneyIn = inMonth.filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0);
   const moneyOut = inMonth.filter((t) => t.amount < 0).reduce((s, t) => s + t.amount, 0);
@@ -170,7 +176,7 @@ export default function AccountScreen() {
             )}
             {!txs.isPending && !txs.error ? (
               <View style={{ paddingTop: space(6), alignItems: 'center' }}>
-                <Button variant="link" title={txs.isFetching ? 'Loading…' : 'Show older'} onPress={() => setDays((d) => d + STEP_DAYS)} disabled={txs.isFetching} />
+                <Button variant="link" title={txs.isFetching ? 'Loading…' : 'Show older'} onPress={() => txs.fetchNextPage()} disabled={txs.isFetching} />
               </View>
             ) : null}
           </Reveal>

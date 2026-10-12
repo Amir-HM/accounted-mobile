@@ -145,12 +145,12 @@ export async function listTransactionsSince(
   c: Connection,
   dateFrom: string,
   cashAccountId?: string,
-  opts: { status?: 'booked' | 'unbooked'; signal?: AbortSignal } = {},
+  opts: { status?: 'booked' | 'unbooked'; signal?: AbortSignal; dateTo?: string } = {},
 ): Promise<TransactionRow[]> {
   const out: TransactionRow[] = [];
   let cursor: string | null | undefined;
   for (let page = 0; page < 10; page++) {
-    const q = `limit=100&date_from=${dateFrom}${cashAccountId ? `&cash_account_id=${cashAccountId}` : ''}${opts.status ? `&status=${opts.status}` : ''}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`;
+    const q = `limit=100&date_from=${dateFrom}${cashAccountId ? `&cash_account_id=${cashAccountId}` : ''}${opts.status ? `&status=${opts.status}` : ''}${opts.dateTo ? `&date_to=${opts.dateTo}` : ''}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`;
     const r = await request<TransactionRow[]>(c, `/companies/${c.companyId}/transactions?${q}`, { signal: opts.signal });
     out.push(...r.data);
     cursor = r.meta?.next_cursor;
