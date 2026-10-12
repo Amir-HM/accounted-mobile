@@ -181,6 +181,8 @@ export default function RootLayout() {
             <Stack.Screen name="invoices" />
             <Stack.Screen name="vat" />
             <Stack.Screen name="expense/[captureId]" />
+            <Stack.Screen name="mileage/index" />
+            <Stack.Screen name="mileage/new" />
             <Stack.Screen name="viewer/[id]" options={{ presentation: 'fullScreenModal', animation: 'fade' }} />
             <Stack.Screen
               name="add"

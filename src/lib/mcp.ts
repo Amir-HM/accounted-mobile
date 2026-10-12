@@ -119,3 +119,43 @@ export type ExpenseClaimArgs = {
 
 export const stageExpenseClaim = (c: Connection, args: ExpenseClaimArgs) =>
   callTool<{ operation_id?: string; status?: string }>(c, 'gnubok_create_expense_claim', args);
+
+// ---- Körjournal (mileage): Accounted's own trip log ----
+
+export type MileageTrip = {
+  mileage_trip_id: string;
+  trip_date: string;
+  vehicle_type: 'own_car' | 'company_car_fossil' | 'company_car_electric';
+  vehicle_registration: string | null;
+  distance_km: number;
+  from_location: string;
+  to_location: string;
+  purpose: string;
+  visited: string | null;
+  is_round_trip: boolean;
+  status: 'draft' | 'booked';
+  journal_entry_id: string | null;
+};
+
+export const listMileageTrips = (c: Connection, from: string, to: string) =>
+  callTool<{ trips: MileageTrip[]; total_km: number; draft_km: number }>(c, 'gnubok_list_mileage_trips', { from, to });
+
+export type NewTrip = {
+  trip_date: string;
+  from_location: string;
+  to_location: string;
+  /** Total km: both legs when is_round_trip. */
+  distance_km: number;
+  is_round_trip: boolean;
+  purpose: string;
+  visited?: string;
+  vehicle_type: MileageTrip['vehicle_type'];
+  vehicle_registration?: string;
+};
+
+/** Staged: the trip is saved when the operation is approved (it posts nothing). */
+export const logMileageTrip = (c: Connection, trip: NewTrip) => callTool<{ operation_id?: string }>(c, 'gnubok_log_mileage_trip', trip);
+
+/** Staged: one milersättning verifikat for the period's draft trips, posted on approval. */
+export const bookMileagePeriod = (c: Connection, args: { from: string; to: string; entry_date: string; counter_account: '2820' | '2893' | '1930' }) =>
+  callTool<{ operation_id?: string }>(c, 'gnubok_book_mileage_period', args);

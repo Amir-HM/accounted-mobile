@@ -22,7 +22,7 @@ import {
 } from './api';
 import { useChart } from './accounts';
 import { useConnection, type Connection } from './connection';
-import { listPending, suggestCategories } from './mcp';
+import { listMileageTrips, listPending, suggestCategories } from './mcp';
 import { usePref } from './prefs';
 import { deviceStore, numberCodec } from './device-store';
 import { localDate } from './format';
@@ -288,4 +288,20 @@ export function restoreToMissing(tx: Transaction) {
   queryClient.setQueriesData<Transaction[]>({ queryKey: ['missing'] }, (list) =>
     list && !list.some((t) => t.id === tx.id) ? [...list, tx].sort((a, b) => b.date.localeCompare(a.date)) : list,
   );
+}
+
+/** This fiscal year's körjournal (twelve months back), newest first. */
+export function useMileageTrips() {
+  const c = useConnection();
+  return useQuery({
+    queryKey: ['mileage', c?.serverUrl, c?.companyId],
+    queryFn: async () => {
+      const now = new Date();
+      const from = localDate(new Date(now.getFullYear() - 1, now.getMonth(), 1));
+      const r = await listMileageTrips(c!, from, localDate(now));
+      return [...r.trips].sort((a, b) => b.trip_date.localeCompare(a.trip_date));
+    },
+    enabled: !!c,
+    retry: (n, e) => !(e instanceof ApiError && e.code === 'INSUFFICIENT_SCOPE') && n < 2,
+  });
 }
