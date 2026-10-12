@@ -60,7 +60,8 @@ export function MonthBars({
     { label: '', net: 0, income: 0, expenses: 0 } as Month,
   );
   const m = sel == null ? year : months[sel];
-  const title = sel == null ? (ongoing ? `${yearLabel} so far` : yearLabel) : monthLong.format(monthAt(start, sel));
+  // The pill names what the numbers below cover: the year, or the month you tapped.
+  const title = sel == null ? yearLabel : monthLong.format(monthAt(start, sel));
 
   // The gesture runs on the UI thread and keeps the current pick in a shared
   // value, so it never acts on a stale render; React only hears about changes.
@@ -110,12 +111,13 @@ export function MonthBars({
     <View style={{ gap: space(3) }}>
       <View style={st.header}>
         <Text style={type.label}>Result per month</Text>
-        <Tag>{yearLabel}</Tag>
+        <Tag onPress={sel == null ? undefined : () => step(-1)} accessibilityLabel={sel == null ? undefined : `${title}, show the whole year`}>
+          {title}
+        </Tag>
       </View>
 
       {m ? (
         <View style={{ gap: 2 }}>
-          <Text style={type.meta}>{title}</Text>
           <Text style={[type.number, { fontSize: 26, lineHeight: 32 }, m.net < 0 && { color: colors.destructive }]}>
             {formatMoney(m.net)}
           </Text>
@@ -130,7 +132,7 @@ export function MonthBars({
           accessible
           accessibilityRole="adjustable"
           accessibilityLabel={`Result per month, ${yearLabel}`}
-          accessibilityValue={{ text: `${title}: ${formatMoney(m.net)}` }}
+          accessibilityValue={{ text: `${sel == null && ongoing ? `${title} so far` : title}: ${formatMoney(m.net)}` }}
           onAccessibilityAction={(e) => {
             if (e.nativeEvent.actionName === 'increment') step(sel == null ? 0 : Math.min(count - 1, sel + 1));
             if (e.nativeEvent.actionName === 'decrement') step(sel == null ? count - 1 : Math.max(0, sel - 1));

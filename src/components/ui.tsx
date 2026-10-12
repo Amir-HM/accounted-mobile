@@ -225,11 +225,23 @@ export function Segmented<K extends string>({
 }
 
 /** A small outlined pill for a period or a tag ("2025/2026"), like the web's period chips. */
-export function Tag({ children }: { children: string }) {
+export function Tag({ children, onPress, accessibilityLabel }: { children: string; onPress?: () => void; accessibilityLabel?: string }) {
+  if (!onPress) {
+    return (
+      <View style={s.tag}>
+        <Text style={s.tagText}>{children}</Text>
+      </View>
+    );
+  }
   return (
-    <View style={s.tag}>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? children}
+      onPress={onPress}
+      hitSlop={8}
+      style={({ pressed }) => [s.tag, pressed && { backgroundColor: colors.muted }]}>
       <Text style={s.tagText}>{children}</Text>
-    </View>
+    </Pressable>
   );
 }
 
