@@ -229,7 +229,7 @@ export default function Overview() {
             meta={banks.data ? (brokenBanks.length ? t('Needs attention') : t('All connected')) : undefined}
             onPress={() => router.push('/banks')}
           />
-          <Row icon={Percent} title={t('VAT return')} meta={t('This period so far')} onPress={() => router.push('/vat')} last />
+          <Row icon={Percent} title={t('VAT declaration')} meta={t('This period so far')} onPress={() => router.push('/vat')} last />
         </Reveal>
       </ScrollView>
     </View>

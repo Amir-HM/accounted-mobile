@@ -39,7 +39,7 @@ export default function Vat() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <TopBar title={t('VAT return')} back />
+      <TopBar title={t('VAT declaration')} back />
       <ScrollView
         contentContainerStyle={{ paddingHorizontal: space(4), paddingBottom: space(12) }}
         refreshControl={<RefreshControl refreshing={q.isRefetching} onRefresh={() => q.refetch()} />}

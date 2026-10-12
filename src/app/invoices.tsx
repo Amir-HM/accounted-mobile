@@ -68,7 +68,7 @@ export default function Invoices() {
               <>
                 {unpaid.length ? (
                   <View style={{ gap: space(1) }}>
-                    <Text style={type.label}>{t('Customers owe you')}</Text>
+                    <Text style={type.label}>{t('Receivables')}</Text>
                     <Text style={[type.number, { fontSize: 36, lineHeight: 42 }]}>{formatMoney(owed)}</Text>
                     <Text style={type.meta}>
                       {[

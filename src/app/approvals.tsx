@@ -105,7 +105,7 @@ export default function Approvals() {
       [
         { text: t('Cancel'), style: 'cancel' },
         {
-          text: t('Approve'),
+          text: t('Approve invoice'),
           isPreferred: true,
           onPress: async () => {
             setBusy(si.id);
@@ -238,7 +238,7 @@ export default function Approvals() {
                     onPress={() => conn && WebBrowser.openBrowserAsync(`${conn.serverUrl}/supplier-invoices/${si.id}`)}
                     style={{ flex: 1 }}
                   />
-                  <Button title={t('Approve')} size="sm" onPress={() => approveInvoice(si)} busy={busy === si.id} style={{ flex: 1 }} />
+                  <Button title={t('Approve invoice')} size="sm" onPress={() => approveInvoice(si)} busy={busy === si.id} style={{ flex: 1 }} />
                 </View>
               </Reveal>
             ))}
