@@ -5,6 +5,7 @@ import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 're
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 
+import { useT } from '@/lib/i18n';
 import { captureFile, useCaptures } from '@/lib/queue';
 import { colors, useHex } from '@/lib/theme';
 
@@ -15,6 +16,7 @@ export default function Viewer() {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const hex = useHex();
+  const t = useT();
   if (!c) return null;
   const uri = captureFile(c).uri;
 
@@ -31,11 +33,19 @@ export default function Viewer() {
           <Image source={uri} style={{ width, height }} contentFit="contain" />
         </ScrollView>
       ) : (
-        <WebView source={{ uri }} originWhitelist={['*']} allowingReadAccessToURL={uri} style={{ flex: 1, marginTop: insets.top + 52, backgroundColor: 'transparent' }} />
+        <WebView
+          source={{ uri }}
+          // The receipt file only: no scripts, and a link inside a PDF never navigates the viewer.
+          originWhitelist={['file://*']}
+          javaScriptEnabled={false}
+          onShouldStartLoadWithRequest={(r) => r.url === uri}
+          allowingReadAccessToURL={uri}
+          style={{ flex: 1, marginTop: insets.top + 52, backgroundColor: 'transparent' }}
+        />
       )}
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Close"
+        accessibilityLabel={t('Close')}
         onPress={() => router.back()}
         hitSlop={12}
         style={[st.close, { top: insets.top + 8 }]}>

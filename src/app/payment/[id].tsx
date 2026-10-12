@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Image as ImageIcon, ScanLine } from 'lucide-react-native';
-import { useState } from 'react';
-import { Alert, ScrollView, Text, View } from 'react-native';
+import { Image as ImageIcon, Pencil, ScanLine } from 'lucide-react-native';
+import { useEffect, useState } from 'react';
+import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { Reveal } from '@/components/motion';
 import { usePref } from '@/lib/prefs';
@@ -13,11 +13,16 @@ import { nameAccount, useLedgerNames, useNicknames } from '@/lib/accounts';
 import { getTransaction, type Transaction } from '@/lib/api';
 import { captureAndQueue, type CaptureMethod } from '@/lib/capture';
 import { useConnection } from '@/lib/connection';
-import { formatMoney, tidyMerchant } from '@/lib/format';
+import { formatMoney } from '@/lib/format';
+import { useT } from '@/lib/i18n';
 import { queryClient, useCashAccounts } from '@/lib/queries';
 import { colors, space, type } from '@/lib/theme';
+import { hasScan, takeScan } from '@/lib/intents';
+import { merchantName, promptMerchantName, useMerchantNames } from '@/lib/merchants';
 
 export default function PaymentScreen() {
+  const own = useMerchantNames();
+  const tl = useT();
   const { id } = useLocalSearchParams<{ id: string }>();
   const conn = useConnection();
   const accounts = useCashAccounts();
@@ -35,8 +40,9 @@ export default function PaymentScreen() {
   const ledger = useLedgerNames();
   const nicks = useNicknames();
   const raw = accounts.data?.find((a) => a.cash_account_id === t?.cash_account_id);
-  const account = raw ? nameAccount(raw, ledger.data, nicks) : undefined;
-  const name = tidyMerchant(t?.merchant_name ?? t?.description);
+  const account = raw ? nameAccount(raw, ledger.data, nicks, tl.lang) : undefined;
+  const original = (t?.merchant_name ?? t?.description ?? '').trim();
+  const name = merchantName(original, own, tl.lang);
 
   async function capture(method: CaptureMethod) {
     if (!t) return;
@@ -48,11 +54,21 @@ export default function PaymentScreen() {
         router.back();
       }
     } catch (e) {
-      Alert.alert('Could not add the receipt', e instanceof Error ? e.message : String(e));
+      Alert.alert(tl('Could not add the receipt'), e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(null);
     }
   }
+
+  // Opened from "Snap the receipt": go straight to the scanner, once the payment has loaded.
+  const ready = !!t;
+  useEffect(() => {
+    if (!ready || !hasScan(id)) return;
+    // Taken inside the timer, so an effect re-run before it fires cannot lose it.
+    const timer = setTimeout(() => takeScan(id) && void capture('scan'), 350); // after the push animation
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- capture reads the loaded payment
+  }, [ready, id]);
 
   function noReceipt() {
     if (!t) return;
@@ -62,11 +78,15 @@ export default function PaymentScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <TopBar title="Payment" back />
+      <TopBar
+        title={tl('Payment')}
+        back
+        right={original ? <Button size="sm" variant="outline" icon={Pencil} accessibilityLabel={tl('Rename merchant')} onPress={() => promptMerchantName(original, name)} /> : null}
+      />
       {!t ? (
         tx.error ? (
           <View style={{ padding: space(4) }}>
-            <Attn action="Try again" onAction={() => tx.refetch()}>
+            <Attn action={tl('Try again')} onAction={() => tx.refetch()}>
               {tx.error.message}
             </Attn>
           </View>
@@ -74,7 +94,7 @@ export default function PaymentScreen() {
       ) : (
         <ScrollView contentContainerStyle={{ paddingHorizontal: space(4), paddingBottom: space(12) }}>
           <Reveal index={0} style={{ paddingTop: space(8), paddingBottom: space(6), gap: space(2) }}>
-            <Text style={type.label}>{t.amount < 0 ? 'Card payment' : 'Incoming'}</Text>
+            <Text style={type.label}>{t.amount < 0 ? tl('Card payment') : tl('Incoming')}</Text>
             <Text selectable style={[type.number, { fontSize: 40, lineHeight: 46 }]}>
               {formatMoney(t.amount, t.currency)}
             </Text>
@@ -84,46 +104,67 @@ export default function PaymentScreen() {
 
           <Reveal index={1}>
             <Divider />
-            <Row title="Date" value={t.date.slice(0, 10)} valueTone="muted" />
-            <Row title="Account" value={account ? account.title : '–'}
+            {original && original !== name ? (
+              <View style={st.original}>
+                <Text style={type.body}>{tl('On the bank statement')}</Text>
+                <Text selectable style={[type.body, { flexShrink: 1, textAlign: 'right', color: colors.mutedForeground }]}>
+                  {original}
+                </Text>
+              </View>
+            ) : null}
+            <Row title={tl('Date')} value={t.date.slice(0, 10)} valueTone="muted" />
+            <Row title={tl('Account')} value={account ? account.title : '–'}
             onPress={account ? () => router.push({ pathname: '/account/[id]', params: { id: account.cash_account_id } }) : undefined} valueTone="muted" />
-            <Row title="In the books" value={t.journal_entry_id ? 'Booked' : 'Not booked yet'} valueTone="muted" last />
+            <Row title={tl('In the books')} value={t.journal_entry_id ? tl('Booked') : tl('Not booked yet')} valueTone="muted" last />
             <Divider />
           </Reveal>
 
           <Reveal index={2} style={{ paddingTop: space(8), gap: space(3) }}>
-            <Button title="Scan receipt" icon={ScanLine} onPress={() => capture('scan')} busy={busy === 'scan'} disabled={!!busy} />
+            <Button title={tl('Scan receipt')} icon={ScanLine} onPress={() => capture('scan')} busy={busy === 'scan'} disabled={!!busy} />
             <Button
-              title="Photo or file"
+              title={tl('Photo or file')}
               icon={ImageIcon}
               variant="outline"
               disabled={!!busy}
               onPress={() =>
                 router.push({
                   pathname: '/add',
-                  params: { txId: t.id, label: name, amount: String(t.amount), currency: t.currency, date: t.date },
+                  params: { txId: t.id },
                 })
               }
             />
             <Text style={[type.meta, { lineHeight: 18, paddingTop: space(1) }]}>
               {t.journal_entry_id
-                ? 'Already booked: the receipt becomes the voucher’s underlag and cannot be changed afterwards.'
-                : 'The receipt is archived now and follows the payment when it is booked.'}{' '}
-              Keep the paper until the upload is confirmed.
+                ? tl('Already booked: the receipt becomes the voucher’s underlag and cannot be changed afterwards.')
+                : tl('The receipt is archived now and follows the payment when it is booked.')}{' '}
+              {tl('Keep the paper until the upload is confirmed.')}
             </Text>
           </Reveal>
 
           {bookOn && !t.journal_entry_id ? (
             <View style={{ paddingTop: space(6) }}>
-              <Button title="Book this payment" variant="outline" onPress={() => router.push({ pathname: '/book/[id]', params: { id: t.id } })} />
+              <Button title={tl('Book this payment')} variant="outline" onPress={() => router.push({ pathname: '/book/[id]', params: { id: t.id } })} />
             </View>
           ) : null}
 
           <View style={{ paddingTop: space(8), alignItems: 'center' }}>
-            <Button title="No receipt needed" variant="link" onPress={noReceipt} />
+            <Button title={tl('No receipt needed')} variant="link" onPress={noReceipt} />
           </View>
         </ScrollView>
       )}
     </View>
   );
 }
+
+const st = StyleSheet.create({
+  original: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: space(4),
+    minHeight: 52,
+    paddingVertical: space(3),
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+});

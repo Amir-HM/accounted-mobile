@@ -6,6 +6,8 @@ import { addNetworkStateListener } from 'expo-network';
 import { DarkTheme, DefaultTheme, router, Stack, ThemeProvider } from 'expo-router';
 import { requireOptionalNativeModule } from 'expo';
 import * as Notifications from 'expo-notifications';
+
+import { armScan } from '@/lib/intents';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useRef } from 'react';
 import { AppState, useColorScheme } from 'react-native';
@@ -14,10 +16,11 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { LockGate } from '@/components/lock-gate';
 import { ToastHost } from '@/components/toast-host';
 import { useConnection } from '@/lib/connection';
+import { translate, useT, type Lang } from '@/lib/i18n';
 import { queryClient } from '@/lib/queries';
 import { captureUnlinked } from '@/lib/capture';
 import { getPref, setPref } from '@/lib/prefs';
-import { usePushEnabled } from '@/lib/push';
+import { refreshPushRegistration, usePushEnabled } from '@/lib/push';
 import { runQueue, useCaptures } from '@/lib/queue';
 import { colors, fonts } from '@/lib/theme';
 
@@ -28,13 +31,39 @@ Notifications.setNotificationHandler({
   handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: false, shouldSetBadge: false }),
 });
 
-/** Tapping "Snap the receipt" opens that payment, also from a cold start. */
+// "Snap the receipt" carries a Scan button; Later just dismisses it. The
+// buttons are registered again whenever the language changes.
+function useNotificationCategories(lang: Lang) {
+  useEffect(() => {
+    Notifications.setNotificationCategoryAsync('payment', [
+      { identifier: 'scan', buttonTitle: translate(lang, 'Scan receipt'), options: { opensAppToForeground: true } },
+      { identifier: 'later', buttonTitle: translate(lang, 'Later'), options: { opensAppToForeground: false } },
+    ]).catch(() => {});
+  }, [lang]);
+}
+
+let handledResponse: string | null = null;
+
+/**
+ * Tapping "Snap the receipt" (or its Scan button) opens the scanner for that
+ * payment, also from a cold start; cancelling the scanner leaves you on the
+ * payment. Approvals open the approvals list.
+ */
 function useNotificationRouting(enabled: boolean) {
   useEffect(() => {
     if (!enabled) return;
     const open = (r: Notifications.NotificationResponse | null) => {
-      const url = r?.notification.request.content.data?.url;
-      if (typeof url === 'string' && (url.startsWith('/payment/') || url === '/approvals')) router.push(url as never);
+      if (!r || r.notification.request.identifier === handledResponse) return;
+      handledResponse = r.notification.request.identifier;
+      if (r.actionIdentifier === 'later') return;
+      const url = r.notification.request.content.data?.url;
+      if (typeof url !== 'string') return;
+      const payment = url.match(/^\/payment\/([\w-]+)$/);
+      if (payment) {
+        armScan(payment[1]);
+        router.push({ pathname: '/payment/[id]', params: { id: payment[1] } });
+      }
+      else if (url === '/approvals') router.push('/approvals');
     };
     open(Notifications.getLastNotificationResponse());
     const sub = Notifications.addNotificationResponseReceivedListener(open);
@@ -43,6 +72,12 @@ function useNotificationRouting(enabled: boolean) {
 }
 
 /** Retry the capture queue whenever it could succeed: launch, foreground, reconnect, every minute. */
+function usePushRefresh(connection: ReturnType<typeof useConnection>) {
+  useEffect(() => {
+    if (connection) void refreshPushRegistration(connection);
+  }, [connection]);
+}
+
 function useQueueWorker(enabled: boolean) {
   useEffect(() => {
     if (!enabled) return;
@@ -82,27 +117,38 @@ function usePrimeNotifications(enabled: boolean) {
  * Home Screen quick action "Scan receipt" (long-press the app icon). Needs
  * the native module, so it only exists in real builds; Expo Go skips it.
  */
-function useQuickActions(enabled: boolean) {
+function useQuickActions(enabled: boolean, lang: Lang) {
+  const launched = useRef(false);
   useEffect(() => {
     if (!enabled || !requireOptionalNativeModule('ExpoQuickActions')) return;
     let sub: { remove(): void } | undefined;
+    let gone = false; // the effect re-runs on a language change; a late import must not add a second listener
     import('expo-quick-actions').then((QA) => {
-      QA.setItems([{ id: 'scan', title: 'Scan receipt', icon: 'symbol:doc.viewfinder' }]);
-      if (QA.initial?.id === 'scan') setTimeout(() => captureUnlinked('scan'), 400);
+      if (gone) return;
+      QA.setItems([{ id: 'scan', title: translate(lang, 'Scan receipt'), icon: 'symbol:doc.viewfinder' }]);
+      // The launch action runs once; a language change only renames the item.
+      if (!launched.current && QA.initial?.id === 'scan') setTimeout(() => captureUnlinked('scan'), 400);
+      launched.current = true;
       sub = QA.addListener((a) => a.id === 'scan' && captureUnlinked('scan'));
     });
-    return () => sub?.remove();
-  }, [enabled]);
+    return () => {
+      gone = true;
+      sub?.remove();
+    };
+  }, [enabled, lang]);
 }
 
 export default function RootLayout() {
   const scheme = useColorScheme();
   const connection = useConnection();
+  const t = useT();
   const [fontsLoaded] = useFonts({ Geist_400Regular, Geist_500Medium, Geist_600SemiBold, HedvigLettersSerif_400Regular });
   useQueueWorker(!!connection);
+  usePushRefresh(connection);
   useNotificationRouting(!!connection && !!fontsLoaded);
   usePrimeNotifications(!!connection && !!fontsLoaded);
-  useQuickActions(!!connection && !!fontsLoaded);
+  useQuickActions(!!connection && !!fontsLoaded, t.lang);
+  useNotificationCategories(t.lang);
 
   // "Open on the scanner": the camera first, once per cold start.
   const scannedOnLaunch = useRef(false);
@@ -131,6 +177,10 @@ export default function RootLayout() {
             <Stack.Screen name="book/[id]" />
             <Stack.Screen name="to-book" />
             <Stack.Screen name="approvals" />
+            <Stack.Screen name="banks" />
+            <Stack.Screen name="invoices" />
+            <Stack.Screen name="vat" />
+            <Stack.Screen name="expense/[captureId]" />
             <Stack.Screen name="viewer/[id]" options={{ presentation: 'fullScreenModal', animation: 'fade' }} />
             <Stack.Screen
               name="add"
@@ -145,7 +195,7 @@ export default function RootLayout() {
               options={{
                 presentation: 'formSheet',
                 headerShown: true,
-                title: 'Match to a payment',
+                title: t('Match to a payment'),
                 headerTitleStyle: { fontFamily: fonts.medium, fontSize: 15 },
                 headerShadowVisible: false,
                 sheetAllowedDetents: [0.6, 1],

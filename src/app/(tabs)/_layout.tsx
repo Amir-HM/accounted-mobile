@@ -1,23 +1,31 @@
 import * as Notifications from 'expo-notifications';
-import { Tabs } from 'expo-router';
+import { NativeTabs } from 'expo-router/unstable-native-tabs';
 import { useEffect } from 'react';
-import { House, ReceiptText, Settings } from 'lucide-react-native';
-import { StyleSheet } from 'react-native';
+import { useColorScheme } from 'react-native';
 
 import { useHiddenIds, useMissingReceipts } from '@/lib/queries';
+import { useT } from '@/lib/i18n';
 import { usePushEnabled } from '@/lib/push';
 import { useCaptures } from '@/lib/queue';
 import { fonts, useHex } from '@/lib/theme';
 
-/** The web's mobile bottom nav: paper surface, hairline top, line icons, black count badge. */
+/**
+ * The system tab bar: Liquid Glass on iOS 26, minimising while you scroll.
+ * Navigation is platform chrome, so it is native; the content inside stays
+ * Accounted's flat paper and hairlines. Ink for the selected tab, the same
+ * black count badge as the web.
+ */
 export default function TabsLayout() {
   const hex = useHex();
+  const t = useT();
   const missing = useMissingReceipts();
   const hidden = useHiddenIds();
   const captures = useCaptures();
   const inFlight = new Set(captures.filter((c) => c.transaction && c.state !== 'failed').map((c) => c.transaction!.id));
   const count = (missing.data ?? []).filter((t) => !hidden.includes(t.id) && !inFlight.has(t.id)).length;
   const push = usePushEnabled();
+  // iOS draws badge text in white: ink works in light mode; dark mode keeps the system red.
+  const dark = useColorScheme() === 'dark';
 
   // The app icon carries the same count once notifications are allowed.
   useEffect(() => {
@@ -25,33 +33,29 @@ export default function TabsLayout() {
   }, [count, push, missing.isPending]);
 
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        animation: 'none',
-        tabBarActiveTintColor: hex.foreground,
-        tabBarInactiveTintColor: hex.mutedForeground,
-        tabBarStyle: { backgroundColor: hex.background, borderTopColor: hex.border, borderTopWidth: StyleSheet.hairlineWidth },
-        tabBarLabelStyle: { fontFamily: fonts.body, fontSize: 12 },
-        tabBarBadgeStyle: { backgroundColor: hex.foreground, color: hex.background, fontFamily: fonts.medium, fontSize: 11 },
+    <NativeTabs
+      minimizeBehavior="onScrollDown"
+      tintColor={hex.foreground}
+      iconColor={{ default: hex.mutedForeground, selected: hex.foreground }}
+      badgeBackgroundColor={dark ? undefined : hex.foreground}
+      labelStyle={{
+        default: { fontFamily: fonts.body, fontSize: 11, color: hex.mutedForeground },
+        selected: { fontFamily: fonts.medium, fontSize: 11, color: hex.foreground },
       }}
     >
-      <Tabs.Screen
-        name="(home)"
-        options={{ title: 'Overview', tabBarIcon: ({ color }) => <House size={22} strokeWidth={1.5} color={color} /> }}
-      />
-      <Tabs.Screen
-        name="receipts"
-        options={{
-          title: 'Receipts',
-          tabBarBadge: count > 0 ? (count > 99 ? '99+' : count) : undefined,
-          tabBarIcon: ({ color }) => <ReceiptText size={22} strokeWidth={1.5} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="settings"
-        options={{ title: 'Settings', tabBarIcon: ({ color }) => <Settings size={22} strokeWidth={1.5} color={color} /> }}
-      />
-    </Tabs>
+      <NativeTabs.Trigger name="(home)">
+        <NativeTabs.Trigger.Icon sf={{ default: 'house', selected: 'house.fill' }} />
+        <NativeTabs.Trigger.Label>{t('Overview')}</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="receipts">
+        <NativeTabs.Trigger.Icon sf={{ default: 'receipt', selected: 'receipt.fill' }} />
+        <NativeTabs.Trigger.Label>{t('Receipts')}</NativeTabs.Trigger.Label>
+        {count > 0 ? <NativeTabs.Trigger.Badge>{count > 99 ? '99+' : String(count)}</NativeTabs.Trigger.Badge> : null}
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="settings">
+        <NativeTabs.Trigger.Icon sf={{ default: 'gearshape', selected: 'gearshape.fill' }} />
+        <NativeTabs.Trigger.Label>{t('Settings')}</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
+    </NativeTabs>
   );
 }

@@ -1,13 +1,18 @@
 import * as LocalAuthentication from 'expo-local-authentication';
+import { router, usePathname } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { AppState, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeOut } from 'react-native-reanimated';
 
 import { Button } from '@/components/ui';
+import { tr, useT } from '@/lib/i18n';
 import { getPref, usePref } from '@/lib/prefs';
 import { colors, fonts, motion, space, type } from '@/lib/theme';
 
 const RELOCK_AFTER_MS = 60_000;
+// Screens iOS presents natively above everything, including this cover: a
+// receipt, the recent-photos grid. They are closed when the app is left.
+const MODAL = /^\/(viewer\/|add|assign\/|prime)/;
 
 /**
  * Two privacy layers over the whole app:
@@ -17,18 +22,24 @@ const RELOCK_AFTER_MS = 60_000;
  *   passcode) before showing anything.
  */
 export function LockGate({ enabled }: { enabled: boolean }) {
+  const t = useT();
   const lock = usePref('faceIdLock');
   const cover = usePref('privacyCover');
   const [away, setAway] = useState(false);
   const [locked, setLocked] = useState(() => enabled && getPref('faceIdLock'));
   const leftAt = useRef<number | null>(null);
   const prompting = useRef(false);
+  const pathname = usePathname();
+  const path = useRef(pathname);
+  useEffect(() => {
+    path.current = pathname;
+  }, [pathname]);
 
   async function unlock() {
     if (prompting.current) return;
     prompting.current = true;
     try {
-      const r = await LocalAuthentication.authenticateAsync({ promptMessage: 'Unlock Accounted', disableDeviceFallback: false });
+      const r = await LocalAuthentication.authenticateAsync({ promptMessage: tr('Unlock Accounted'), disableDeviceFallback: false });
       if (r.success) setLocked(false);
     } finally {
       prompting.current = false;
@@ -48,6 +59,9 @@ export function LockGate({ enabled }: { enabled: boolean }) {
       } else {
         setAway(true);
         if (s === 'background' && leftAt.current == null) leftAt.current = Date.now();
+        if (s === 'background' && (getPref('privacyCover') || getPref('faceIdLock')) && MODAL.test(path.current) && router.canGoBack()) {
+          router.back();
+        }
       }
     });
     return () => sub.remove();
@@ -62,8 +76,8 @@ export function LockGate({ enabled }: { enabled: boolean }) {
       <Text style={st.wordmark}>accounted</Text>
       {locked && lock && !away ? (
         <View style={{ gap: space(3), alignItems: 'center' }}>
-          <Text style={type.meta}>Locked</Text>
-          <Button title="Unlock" onPress={unlock} style={{ minWidth: 180 }} />
+          <Text style={type.meta}>{t('Locked')}</Text>
+          <Button title={t('Unlock')} onPress={unlock} style={{ minWidth: 180 }} />
         </View>
       ) : null}
     </Animated.View>

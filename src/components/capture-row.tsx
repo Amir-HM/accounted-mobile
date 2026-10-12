@@ -1,11 +1,12 @@
 import { Image } from 'expo-image';
 import { CircleAlert, CircleCheck, FileText } from 'lucide-react-native';
-import { View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { Row } from '@/components/ui';
 import { formatMoney, formatRelative } from '@/lib/format';
 import { ProgressLine } from '@/components/motion';
 import { verify } from '@/lib/checks';
+import { useT, type T } from '@/lib/i18n';
 import { captureFile, readingLine, useUploadProgress, type Capture } from '@/lib/queue';
 import { colors, radius, useHex } from '@/lib/theme';
 
@@ -30,21 +31,21 @@ export function CaptureThumb({ capture, size = 36 }: { capture: Capture; size?: 
   );
 }
 
-function status(c: Capture): string {
+function status(c: Capture, t: T): string {
   switch (c.state) {
     case 'queued':
-      return c.error ? `Waiting to retry · ${c.error}` : 'Waiting to upload';
+      return c.error ? t('Waiting to retry · {error}', { error: c.error }) : t('Waiting to upload');
     case 'uploading':
-      return 'Uploading…';
+      return t('Uploading…');
     case 'attaching':
-      return 'Attaching to the payment…';
+      return t('Attaching to the payment…');
     case 'failed':
-      return c.error ?? 'Failed';
+      return c.error ?? t('Failed');
     case 'done': {
-      const v = verify(c.extraction, c.transaction);
+      const v = verify(c.extraction, c.transaction, t.lang);
       if (v.state === 'warn') return v.summary;
-      if (c.transaction) return `Attached ${formatRelative(c.attachedAt ?? c.createdAt)}`;
-      return v.state === 'unread' ? 'Archived · tap to match a payment' : `${readingLine(c.extraction)} · tap to match`;
+      if (c.transaction) return t('Attached {when}', { when: formatRelative(c.attachedAt ?? c.createdAt, t.lang) });
+      return v.state === 'unread' ? t('Archived · tap to match a payment') : t('{reading} · tap to match', { reading: readingLine(c.extraction) });
     }
   }
 }
@@ -52,7 +53,8 @@ function status(c: Capture): string {
 export function CaptureRow({ capture: c, onPress, last }: { capture: Capture; onPress?: () => void; last?: boolean }) {
   const progress = useUploadProgress(c.id);
   const hex = useHex();
-  const v = c.state === 'done' ? verify(c.extraction, c.transaction) : null;
+  const t = useT();
+  const v = c.state === 'done' ? verify(c.extraction, c.transaction, t.lang) : null;
   const badge =
     v?.state === 'ok' ? (
       <CircleCheck size={16} strokeWidth={1.5} color={hex.success} />
@@ -62,9 +64,14 @@ export function CaptureRow({ capture: c, onPress, last }: { capture: Capture; on
   return (
     <View>
       <Row
-        leading={<CaptureThumb capture={c} />}
+        leading={
+          <View>
+            <CaptureThumb capture={c} />
+            {badge ? <View style={[st.badge, { backgroundColor: hex.background }]}>{badge}</View> : null}
+          </View>
+        }
         title={c.transaction ? c.transaction.label : c.fileName}
-        meta={status(c)}
+        meta={status(c, t)}
         value={c.transaction ? formatMoney(c.transaction.amount, c.transaction.currency) : undefined}
         valueTone={c.state === 'failed' ? 'negative' : 'muted'}
         onPress={onPress}
@@ -74,3 +81,8 @@ export function CaptureRow({ capture: c, onPress, last }: { capture: Capture; on
     </View>
   );
 }
+
+const st = StyleSheet.create({
+  // The reading's verdict sits on the thumbnail's corner, on a paper disc.
+  badge: { position: 'absolute', right: -6, bottom: -6, borderRadius: 999, padding: 1 },
+});

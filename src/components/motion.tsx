@@ -60,6 +60,7 @@ export function ProgressLine({ value }: { value: number }) {
   useEffect(() => {
     w.set(withTiming(value, { duration: motion.base, easing: motion.out }));
   }, [value, w]);
-  const a = useAnimatedStyle(() => ({ width: `${Math.round(w.get() * 100)}%` }));
-  return <Animated.View style={[{ height: 2, borderRadius: 1, backgroundColor: colors.foreground }, a]} />;
+  // Scale, not width: a transform animates without a layout pass every frame.
+  const a = useAnimatedStyle(() => ({ transform: [{ scaleX: w.get() }] }));
+  return <Animated.View style={[{ height: 2, borderRadius: 1, backgroundColor: colors.foreground, width: '100%', transformOrigin: 'left' }, a]} />;
 }

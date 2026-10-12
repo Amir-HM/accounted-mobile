@@ -5,6 +5,7 @@ import * as Print from 'expo-print';
 import * as Haptics from 'expo-haptics';
 import { Alert, TurboModuleRegistry } from 'react-native';
 
+import { tr } from './i18n';
 import { enqueue, type Capture } from './queue';
 
 type Picked = { uri: string; fileName: string; mimeType: string; source: Capture['source']; pages: number };
@@ -17,7 +18,7 @@ const hasScanner = () => TurboModuleRegistry.get('DocumentScanner') != null;
 /** Expo Go fallback: the plain camera, one photo. */
 async function takePhoto(): Promise<Picked | null> {
   const perm = await ImagePicker.requestCameraPermissionsAsync();
-  if (!perm.granted) throw new Error('Camera access is off. Turn it on in Settings to photograph receipts.');
+  if (!perm.granted) throw new Error(tr('Camera access is off. Turn it on in Settings to photograph receipts.'));
   const res = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.9 });
   const a = res.canceled ? null : res.assets[0];
   if (!a) return null;
@@ -28,7 +29,8 @@ async function takePhoto(): Promise<Picked | null> {
 export async function scanReceipt(): Promise<Picked | null> {
   if (!hasScanner()) return takePhoto();
   const { default: DocumentScanner, ResponseType, ScanDocumentResponseStatus } = await import('react-native-document-scanner-plugin');
-  const res = await DocumentScanner.scanDocument({ croppedImageQuality: 100, responseType: ResponseType.ImageFilePath });
+  // 85: sharp for a receipt; 100 made a five-page PDF about 25 MB in memory.
+  const res = await DocumentScanner.scanDocument({ croppedImageQuality: 85, responseType: ResponseType.ImageFilePath });
   const pages = res.scannedImages ?? [];
   if (res.status === ScanDocumentResponseStatus.Cancel || pages.length === 0) return null;
   if (pages.length === 1) {
@@ -79,6 +81,6 @@ export async function captureUnlinked(method: CaptureMethod) {
     const c = await captureAndQueue(method);
     if (c) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   } catch (e) {
-    Alert.alert('Could not add the receipt', e instanceof Error ? e.message : String(e));
+    Alert.alert(tr('Could not add the receipt'), e instanceof Error ? e.message : String(e));
   }
 }

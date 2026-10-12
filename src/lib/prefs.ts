@@ -1,33 +1,13 @@
-import Storage from 'expo-sqlite/kv-store';
-import { useSyncExternalStore } from 'react';
+import { booleanCodec, deviceStore, type DeviceStore } from './device-store';
 
 /** Small device-local preferences (booleans), observable from components. */
-export type PrefKey = 'faceIdLock' | 'privacyCover' | 'pushPrimed' | 'openOnScanner' | 'bookInAccounted';
-const DEFAULTS: Record<PrefKey, boolean> = { faceIdLock: false, privacyCover: true, pushPrimed: false, openOnScanner: false, bookInAccounted: false };
+export type PrefKey = 'faceIdLock' | 'privacyCover' | 'pushPrimed' | 'openOnScanner' | 'bookInAccounted' | 'privatePush';
+const DEFAULTS: Record<PrefKey, boolean> = { faceIdLock: false, privacyCover: true, pushPrimed: false, openOnScanner: false, bookInAccounted: false, privatePush: false };
 
-const cache = new Map<PrefKey, boolean>();
-const listeners = new Set<() => void>();
+const stores = Object.fromEntries(
+  (Object.keys(DEFAULTS) as PrefKey[]).map((k) => [k, deviceStore(`accounted.pref.${k}`, DEFAULTS[k], booleanCodec)]),
+) as Record<PrefKey, DeviceStore<boolean>>;
 
-export function getPref(k: PrefKey): boolean {
-  if (!cache.has(k)) {
-    const raw = Storage.getItemSync(`accounted.pref.${k}`);
-    cache.set(k, raw == null ? DEFAULTS[k] : raw === '1');
-  }
-  return cache.get(k)!;
-}
-
-export function setPref(k: PrefKey, v: boolean) {
-  cache.set(k, v);
-  Storage.setItemSync(`accounted.pref.${k}`, v ? '1' : '0');
-  listeners.forEach((l) => l());
-}
-
-export function usePref(k: PrefKey): boolean {
-  return useSyncExternalStore(
-    (l) => {
-      listeners.add(l);
-      return () => listeners.delete(l);
-    },
-    () => getPref(k),
-  );
-}
+export const getPref = (k: PrefKey) => stores[k].get();
+export const setPref = (k: PrefKey, v: boolean) => stores[k].set(v);
+export const usePref = (k: PrefKey) => stores[k].use();

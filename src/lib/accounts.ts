@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
-import Storage from 'expo-sqlite/kv-store';
-import { useSyncExternalStore } from 'react';
 
 import { request, type CashAccount } from './api';
 import { useConnection, type Connection } from './connection';
+import { deviceStore } from './device-store';
+import { getLang, translate, useLang, type Lang } from './i18n';
 
 /**
  * Human names for bank accounts. The cash-account `name` is the account
@@ -42,55 +42,52 @@ const GENERIC = new Set([
   'Sparkonto', 'PlusGiro', 'Valutakonton', 'Särskilda bankkonton', 'Kassa',
 ]);
 
-export function useLedgerNames() {
+/** The company's chart of accounts, once an hour: bank names and cost accounts both read from it. */
+export function useChart() {
   const c = useConnection();
   return useQuery({
-    queryKey: ['ledger-names', c?.serverUrl, c?.companyId],
+    queryKey: ['chart', c?.serverUrl, c?.companyId],
     queryFn: async () => {
-      const r = await request<{ accounts: { account_number: string; account_name: string }[] }>(
+      const r = await request<{ accounts: { account_number: string; account_name: string; is_active?: boolean }[] }>(
         c as Connection,
-        `/companies/${c!.companyId}/accounts?limit=500`,
+        `/companies/${c!.companyId}/accounts?limit=2000`,
       );
-      return Object.fromEntries(
-        r.data.accounts.filter((a) => String(a.account_number).startsWith('19')).map((a) => [String(a.account_number), a.account_name]),
-      ) as Record<string, string>;
+      return r.data.accounts.map((a) => ({ number: String(a.account_number), name: a.account_name, active: a.is_active !== false }));
     },
     enabled: !!c,
     staleTime: 3600_000,
   });
 }
 
+export function useLedgerNames() {
+  const chart = useChart();
+  const data = chart.data
+    ? (Object.fromEntries(chart.data.filter((a) => a.number.startsWith('19')).map((a) => [a.number, a.name])) as Record<string, string>)
+    : undefined;
+  return { ...chart, data };
+}
+
 // ---- Names set on this iPhone ----
-const NICK_KEY = 'accounted.accountNames';
-let nicknames: Record<string, string> = JSON.parse(Storage.getItemSync(NICK_KEY) ?? '{}');
-const nickListeners = new Set<() => void>();
+const nicknames = deviceStore<Record<string, string>>('accounted.accountNames', {});
 
 export function setNickname(cashAccountId: string, name: string | null) {
-  const next = { ...nicknames };
-  if (name && name.trim()) next[cashAccountId] = name.trim();
-  else delete next[cashAccountId];
-  nicknames = next;
-  Storage.setItemSync(NICK_KEY, JSON.stringify(nicknames));
-  nickListeners.forEach((l) => l());
+  nicknames.set((prev) => {
+    const next = { ...prev };
+    if (name && name.trim()) next[cashAccountId] = name.trim();
+    else delete next[cashAccountId];
+    return next;
+  });
 }
 
-export function useNicknames(): Record<string, string> {
-  return useSyncExternalStore(
-    (l) => {
-      nickListeners.add(l);
-      return () => nickListeners.delete(l);
-    },
-    () => nicknames,
-  );
-}
+export const useNicknames = nicknames.use;
 
 export type NamedAccount = CashAccount & { title: string; bank: string | null; ledgerName: string | null };
 
-export function nameAccount(a: CashAccount, ledger: Record<string, string> | undefined, nicks: Record<string, string>): NamedAccount {
+export function nameAccount(a: CashAccount, ledger: Record<string, string> | undefined, nicks: Record<string, string>, lang: Lang = getLang()): NamedAccount {
   const bank = bankFromIban(a.iban);
   const ledgerName = ledger?.[a.ledger_account] ?? null;
   const specific = ledgerName && !GENERIC.has(ledgerName) ? ledgerName : null;
-  const title = nicks[a.cash_account_id] ?? specific ?? (bank ? `${bank} ${a.currency}` : `Account ${a.ledger_account}`);
+  const title = nicks[a.cash_account_id] ?? specific ?? (bank ? `${bank} ${a.currency}` : translate(lang, 'Account {number}', { number: a.ledger_account }));
   return { ...a, title, bank, ledgerName };
 }
 
@@ -98,7 +95,8 @@ export function nameAccount(a: CashAccount, ledger: Record<string, string> | und
 export function useNamedAccounts(list: CashAccount[] | undefined) {
   const ledger = useLedgerNames();
   const nicks = useNicknames();
+  const lang = useLang();
   return (list ?? [])
-    .map((a) => nameAccount(a, ledger.data, nicks))
+    .map((a) => nameAccount(a, ledger.data, nicks, lang))
     .sort((a, b) => Number(!!b.balance) - Number(!!a.balance) || Number(b.is_primary) - Number(a.is_primary));
 }

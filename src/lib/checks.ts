@@ -1,3 +1,4 @@
+import { getLang, translate, type Lang } from './i18n';
 import type { Extraction } from './mcp';
 
 /**
@@ -33,56 +34,60 @@ export function hasReading(x: Extraction | null | undefined): x is Extraction {
   return !!x && (x.totals?.total != null || !!x.supplier?.name || !!x.invoice?.invoiceDate);
 }
 
-export function verify(x: Extraction | null | undefined, payment?: Payment): Verdict {
-  if (!hasReading(x)) return { state: 'unread', checks: [], summary: 'Not read' };
+/** In the app's language; pass `t.lang` from render so a language switch recomputes it. */
+export function verify(x: Extraction | null | undefined, payment?: Payment, lang: Lang = getLang()): Verdict {
+  const t = (en: string, vars?: Record<string, string | number>) => translate(lang, en, vars);
+  if (!hasReading(x)) return { state: 'unread', checks: [], summary: t('Not read') };
   const checks: Check[] = [];
   const total = x.totals?.total ?? null;
   const currency = x.invoice?.currency || 'SEK';
 
   if (x.legibility === 'unreadable' || x.legibility === 'partial') {
-    checks.push({ label: 'Legible', state: 'warn', detail: x.legibility === 'partial' ? 'Parts are hard to read' : 'Hard to read' });
+    checks.push({ label: t('Legible'), state: 'warn', detail: x.legibility === 'partial' ? t('Parts are hard to read') : t('Hard to read') });
   }
   if (typeof x.confidence === 'number' && x.confidence < 0.6) {
-    checks.push({ label: 'Confidence', state: 'warn', detail: `${Math.round(x.confidence * 100)}%` });
+    checks.push({ label: t('Confidence'), state: 'warn', detail: `${Math.round(x.confidence * 100)}%` });
   }
 
-  if (total == null) checks.push({ label: 'Total found', state: 'warn', detail: 'No total on the receipt' });
+  if (total == null) checks.push({ label: t('Total found'), state: 'warn', detail: t('No total on the receipt') });
 
   const { subtotal, vatAmount } = x.totals ?? {};
   if (total != null && subtotal != null && vatAmount != null) {
     const ok = Math.abs(round2(subtotal + vatAmount) - total) <= 0.05;
-    checks.push({ label: 'Amounts add up', state: ok ? 'ok' : 'warn', detail: ok ? undefined : `${subtotal} + ${vatAmount} ≠ ${total}` });
+    checks.push({ label: t('Amounts add up'), state: ok ? 'ok' : 'warn', detail: ok ? undefined : `${subtotal} + ${vatAmount} ≠ ${total}` });
   }
   const rates = (x.vatBreakdown ?? []).map((v) => v.rate);
   if (rates.length) {
     const bad = rates.filter((r) => !SWEDISH_VAT.includes(Math.round(r)));
     // Foreign receipts (reverse charge, US sales tax) legitimately carry other rates.
-    if (currency === 'SEK') checks.push({ label: 'VAT rate', state: bad.length ? 'warn' : 'ok', detail: bad.length ? `${bad.join(', ')}% is not a Swedish rate` : rates.map((r) => `${r}%`).join(', ') });
+    if (currency === 'SEK') checks.push({ label: t('VAT rate'), state: bad.length ? 'warn' : 'ok', detail: bad.length ? t('{rates}% is not a Swedish rate', { rates: bad.join(', ') }) : rates.map((r) => `${r}%`).join(', ') });
   }
   if (x.supplier?.orgNumber) {
     const ok = validOrgNumber(x.supplier.orgNumber);
-    checks.push({ label: 'Org number', state: ok ? 'ok' : 'warn', detail: ok ? x.supplier.orgNumber : `${x.supplier.orgNumber} fails the checksum` });
+    checks.push({ label: t('Org number'), state: ok ? 'ok' : 'warn', detail: ok ? x.supplier.orgNumber : t('{number} fails the checksum', { number: x.supplier.orgNumber }) });
   }
 
   if (payment && total != null) {
     const paid = Math.abs(payment.amount);
     if (currency === payment.currency) {
       const ok = Math.abs(paid - total) <= 0.01;
-      checks.push({ label: 'Matches the payment', state: ok ? 'ok' : 'warn', detail: ok ? undefined : `Receipt ${total} ${currency}, paid ${paid} ${payment.currency}` });
+      checks.push({ label: t('Matches the payment'), state: ok ? 'ok' : 'warn', detail: ok ? undefined : t('Receipt {receipt}, paid {paid}', { receipt: `${total} ${currency}`, paid: `${paid} ${payment.currency}` }) });
     } else {
-      checks.push({ label: 'Matches the payment', state: 'ok', detail: `${total} ${currency} paid as ${paid} ${payment.currency}` });
+      checks.push({ label: t('Matches the payment'), state: 'ok', detail: t('{receipt} paid as {paid}', { receipt: `${total} ${currency}`, paid: `${paid} ${payment.currency}` }) });
     }
   }
   if (payment && x.invoice?.invoiceDate) {
     const d = days(x.invoice.invoiceDate, payment.date);
-    checks.push({ label: 'Date', state: d <= 10 ? 'ok' : 'warn', detail: d <= 10 ? x.invoice.invoiceDate : `${x.invoice.invoiceDate}, ${Math.round(d)} days from the payment` });
+    const n = Math.round(d);
+    const far = t(n === 1 ? '{date}, {n} day from the payment' : '{date}, {n} days from the payment', { date: x.invoice.invoiceDate, n });
+    checks.push({ label: t('Date'), state: d <= 10 ? 'ok' : 'warn', detail: d <= 10 ? x.invoice.invoiceDate : far });
   }
 
   const warn = checks.filter((c) => c.state === 'warn');
   return {
     state: warn.length ? 'warn' : 'ok',
     checks,
-    summary: warn.length ? `Check: ${warn[0].label.toLowerCase()}` : payment ? 'Read and matches the payment' : 'Read',
+    summary: warn.length ? t('Check: {what}', { what: warn[0].label.toLowerCase() }) : payment ? t('Read and matches the payment') : t('Read'),
   };
 }
 

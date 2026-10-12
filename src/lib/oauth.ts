@@ -3,6 +3,8 @@ import * as Crypto from 'expo-crypto';
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 
+import { tr } from './i18n';
+
 /**
  * "Sign in with Accounted": OAuth 2.1 authorization code + PKCE against the
  * server's own authorization server (the one its Claude connector uses).
@@ -21,6 +23,9 @@ export const APP_SCOPES = [
   'transactions:read',
   'transactions:write',
   'reports:read',
+  'invoices:read',
+  'suppliers:read',
+  'suppliers:write',
   'bookkeeping:write',
   'pending_operations:read',
   'pending_operations:approve',
@@ -33,21 +38,22 @@ const bytesB64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes));
 
 export class OAuthError extends Error {}
 
-async function json<T>(res: Response, what: string): Promise<T> {
+/** `failed` is the English message for a failure, with {status}. */
+async function json<T>(res: Response, failed: string): Promise<T> {
   const body = await res.json().catch(() => null);
   if (!res.ok || !body) {
-    throw new OAuthError(body?.error_description ?? body?.error ?? `${what} failed (${res.status}).`);
+    throw new OAuthError(body?.error_description ?? body?.error ?? tr(failed, { status: res.status }));
   }
   return body as T;
 }
 
 /** Returns an API key for this server, or null if the user cancelled. */
 export async function signInWithAccounted(serverUrl: string): Promise<string | null> {
-  if (!OAUTH_BOUNCE_URI) throw new OAuthError('This build has no sign-in return address configured. Connect with an API key.');
+  if (!OAUTH_BOUNCE_URI) throw new OAuthError(tr('This build has no sign-in return address configured. Connect with an API key.'));
   const meta = await fetch(`${serverUrl}/.well-known/oauth-authorization-server`)
-    .then((r) => json<Metadata>(r, 'Discovery'))
+    .then((r) => json<Metadata>(r, 'Discovery failed ({status}).'))
     .catch(() => {
-      throw new OAuthError('That address did not answer like an Accounted server.');
+      throw new OAuthError(tr('That address did not answer like an Accounted server.'));
     });
 
   const reg = await fetch(meta.registration_endpoint ?? `${serverUrl}/api/mcp-oauth/register`, {
@@ -62,10 +68,10 @@ export async function signInWithAccounted(serverUrl: string): Promise<string | n
   });
   if (reg.status === 400) {
     throw new OAuthError(
-      `This server has not enabled sign-in for the app yet. In Accounted on the web, register ${OAUTH_BOUNCE_URI} as an OAuth client, or connect with an API key.`,
+      tr('This server has not enabled sign-in for the app yet. In Accounted on the web, register {uri} as an OAuth client, or connect with an API key.', { uri: OAUTH_BOUNCE_URI }),
     );
   }
-  const { client_id } = await json<{ client_id: string }>(reg, 'Client registration');
+  const { client_id } = await json<{ client_id: string }>(reg, 'Client registration failed ({status}).');
 
   const verifier = b64url(bytesB64(Crypto.getRandomBytes(32)));
   const challenge = b64url(
@@ -95,9 +101,9 @@ export async function signInWithAccounted(serverUrl: string): Promise<string | n
     if (err === 'access_denied') return null;
     throw new OAuthError(back.searchParams.get('error_description') ?? err);
   }
-  if (back.searchParams.get('state') !== state) throw new OAuthError('The sign-in response did not match this request.');
+  if (back.searchParams.get('state') !== state) throw new OAuthError(tr('The sign-in response did not match this request.'));
   const code = back.searchParams.get('code');
-  if (!code) throw new OAuthError('The server did not return a sign-in code.');
+  if (!code) throw new OAuthError(tr('The server did not return a sign-in code.'));
 
   const token = await fetch(meta.token_endpoint, {
     method: 'POST',
@@ -109,6 +115,6 @@ export async function signInWithAccounted(serverUrl: string): Promise<string | n
       client_id,
       code_verifier: verifier,
     }).toString(),
-  }).then((r) => json<{ access_token: string }>(r, 'Sign-in'));
+  }).then((r) => json<{ access_token: string }>(r, 'Sign-in failed ({status}).'));
   return token.access_token;
 }

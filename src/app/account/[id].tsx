@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import { router, useLocalSearchParams } from 'expo-router';
 import { FileWarning, Pencil } from 'lucide-react-native';
@@ -10,16 +10,19 @@ import { Attn, Button, Row, SectionLabel, TopBar } from '@/components/ui';
 import { nameAccount, setNickname, useLedgerNames, useNicknames } from '@/lib/accounts';
 import { listTransactionsSince, type TransactionRow } from '@/lib/api';
 import { useConnection } from '@/lib/connection';
-import { formatMoney, formatRelative, maskIban, tidyMerchant } from '@/lib/format';
+import { dateFormat, formatMoney, formatRelative, localDate, maskIban } from '@/lib/format';
+import { capitalize, useT } from '@/lib/i18n';
 import { useCashAccounts, useMissingReceipts } from '@/lib/queries';
 import { showToast } from '@/lib/toast';
 import { colors, fonts, radius, space, type, useHex } from '@/lib/theme';
+import { merchantName, useMerchantNames } from '@/lib/merchants';
 
-const monthFmt = new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric' });
 const STEP_DAYS = 90;
 
 /** One bank account: balance, facts, this month in/out, and its transactions by month. */
 export default function AccountScreen() {
+  const own = useMerchantNames();
+  const t = useT();
   const { id } = useLocalSearchParams<{ id: string }>();
   const conn = useConnection();
   const hex = useHex();
@@ -27,49 +30,57 @@ export default function AccountScreen() {
   const ledger = useLedgerNames();
   const nicks = useNicknames();
   const missing = useMissingReceipts();
-  const [days, setDays] = useState(STEP_DAYS);
   const [showIban, setShowIban] = useState(false);
+  const [now] = useState(() => Date.now()); // read once per visit, not on every render
 
   const raw = accounts.data?.find((a) => a.cash_account_id === id);
-  const a = raw ? nameAccount(raw, ledger.data, nicks) : undefined;
+  const a = raw ? nameAccount(raw, ledger.data, nicks, t.lang) : undefined;
 
-  const since = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
-  const txs = useQuery({
-    queryKey: ['account-tx', conn?.serverUrl, id, days],
-    queryFn: () => listTransactionsSince(conn!, since, id),
+  // One window of STEP_DAYS per page: Show older fetches only the next window, not everything again.
+  const day = (offset: number) => localDate(new Date(now - offset * 86400_000));
+  const txs = useInfiniteQuery({
+    queryKey: ['account-tx', conn?.serverUrl, id],
+    initialPageParam: 0,
+    queryFn: ({ pageParam, signal }) =>
+      listTransactionsSince(conn!, day((pageParam + 1) * STEP_DAYS), id, {
+        signal,
+        ...(pageParam > 0 ? { dateTo: day(pageParam * STEP_DAYS + 1) } : {}),
+      }),
+    getNextPageParam: (_last, pages) => pages.length,
     enabled: !!conn,
-    placeholderData: (prev) => prev,
   });
+  const days = (txs.data?.pages.length ?? 1) * STEP_DAYS;
 
-  const rows = [...(txs.data ?? [])].sort((x, y) => y.date.localeCompare(x.date));
+  const rows = (txs.data?.pages.flat() ?? []).sort((x, y) => y.date.localeCompare(x.date));
   const missingIds = new Set((missing.data ?? []).map((t) => t.id));
-  const thisMonth = new Date().toISOString().slice(0, 7);
+  const thisMonth = localDate().slice(0, 7);
   const inMonth = rows.filter((t) => t.date.startsWith(thisMonth));
   const moneyIn = inMonth.filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0);
   const moneyOut = inMonth.filter((t) => t.amount < 0).reduce((s, t) => s + t.amount, 0);
 
   // Group by month for section labels with the month's net.
+  const monthFmt = dateFormat(t.lang, 'monthYear', { month: 'long', year: 'numeric' });
   const groups: { key: string; label: string; net: number; items: TransactionRow[] }[] = [];
-  for (const t of rows) {
-    const key = t.date.slice(0, 7);
+  for (const tx of rows) {
+    const key = tx.date.slice(0, 7);
     let g = groups.at(-1);
     if (!g || g.key !== key) {
-      g = { key, label: monthFmt.format(new Date(`${key}-15T12:00:00`)), net: 0, items: [] };
+      g = { key, label: capitalize(monthFmt.format(new Date(`${key}-15T12:00:00`))), net: 0, items: [] };
       groups.push(g);
     }
-    g.items.push(t);
-    g.net = Math.round((g.net + t.amount) * 100) / 100;
+    g.items.push(tx);
+    g.net = Math.round((g.net + tx.amount) * 100) / 100;
   }
 
   function rename() {
     if (!a) return;
     Alert.prompt(
-      'Name this account',
-      'Shown on this iPhone only.',
+      t('Name this account'),
+      t('Shown on this iPhone only.'),
       [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Reset', style: 'destructive', onPress: () => setNickname(a.cash_account_id, null) },
-        { text: 'Save', isPreferred: true, onPress: (v?: string) => setNickname(a.cash_account_id, v ?? null) },
+        { text: t('Cancel'), style: 'cancel' },
+        { text: t('Reset'), style: 'destructive', onPress: () => setNickname(a.cash_account_id, null) },
+        { text: t('Save'), isPreferred: true, onPress: (v?: string) => setNickname(a.cash_account_id, v ?? null) },
       ],
       'plain-text',
       a.title,
@@ -83,16 +94,20 @@ export default function AccountScreen() {
       const Clipboard = await import('expo-clipboard');
       await Clipboard.setStringAsync(a.iban.replace(/\s/g, ''));
     } catch {
-      showToast('Copying is not available in this build', 'error');
+      showToast(t('Copying is not available in this build'), 'error');
       return;
     }
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    showToast('IBAN copied');
+    showToast(t('IBAN copied'));
   }
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <TopBar title={a?.title ?? 'Account'} back right={a ? <Button size="sm" variant="outline" icon={Pencil} onPress={rename} /> : null} />
+      <TopBar
+        title={a?.title ?? t('Account')}
+        back
+        right={a ? <Button size="sm" variant="outline" icon={Pencil} accessibilityLabel={t('Rename account')} onPress={rename} /> : null}
+      />
       {!a ? null : (
         <ScrollView contentContainerStyle={{ paddingHorizontal: space(4), paddingBottom: space(12) }}>
           <Reveal index={0} style={{ paddingTop: space(8), gap: space(2) }}>
@@ -102,8 +117,8 @@ export default function AccountScreen() {
             </Text>
             <Text style={type.meta}>
               {[
-                a.available_balance != null && a.available_balance !== a.balance ? `${formatMoney(a.available_balance, a.currency)} available` : null,
-                a.balance_updated_at ? `as reported by the bank ${formatRelative(a.balance_updated_at)}` : 'no bank balance yet',
+                a.available_balance != null && a.available_balance !== a.balance ? t('{amount} available', { amount: formatMoney(a.available_balance, a.currency) }) : null,
+                a.balance_updated_at ? t('as reported by the bank {when}', { when: formatRelative(a.balance_updated_at, t.lang) }) : t('no bank balance yet'),
               ]
                 .filter(Boolean)
                 .join(' · ')}
@@ -111,13 +126,13 @@ export default function AccountScreen() {
           </Reveal>
 
           <Reveal index={1} style={st.grid}>
-            <Tile label="In" value={formatMoney(moneyIn, a.currency)} tone={moneyIn > 0 ? "positive" : undefined} caption="this month" loading={txs.isPending} />
-            <Tile label="Out" value={formatMoney(moneyOut, a.currency)} caption="this month" loading={txs.isPending} />
+            <Tile label={t('In')} value={formatMoney(moneyIn, a.currency)} tone={moneyIn > 0 ? 'positive' : undefined} caption={t('this month')} loading={txs.isPending} />
+            <Tile label={t('Out')} value={formatMoney(moneyOut, a.currency)} caption={t('this month')} loading={txs.isPending} />
           </Reveal>
 
           <Reveal index={2}>
-            <SectionLabel>Details</SectionLabel>
-            <Row title="Bank" value={a.bank ?? '–'} valueTone="muted" />
+            <SectionLabel>{t('Details')}</SectionLabel>
+            <Row title={t('Bank')} value={a.bank ?? '–'} valueTone="muted" />
             <Row
               title="IBAN"
               value={a.iban ? (showIban ? a.iban : (maskIban(a.iban) ?? '–')) : '–'}
@@ -125,15 +140,15 @@ export default function AccountScreen() {
               onPress={a.iban ? () => (showIban ? copyIban() : setShowIban(true)) : undefined}
               chevron={false}
             />
-            <Row title="In the books" value={`${a.ledger_account}${a.ledgerName ? ` · ${a.ledgerName}` : ''}`} valueTone="muted" />
-            <Row title="Bank feed" value={a.enabled ? (a.source === 'enable_banking' ? 'Connected' : a.source) : 'Paused'} valueTone="muted" last />
-            {showIban ? <Text style={[type.meta, { paddingTop: space(2) }]}>Tap the IBAN again to copy it.</Text> : null}
+            <Row title={t('In the books')} value={`${a.ledger_account}${a.ledgerName ? ` · ${a.ledgerName}` : ''}`} valueTone="muted" />
+            <Row title={t('Bank feed')} value={a.enabled ? (a.source === 'enable_banking' ? t('Connected') : a.source) : t('Paused')} valueTone="muted" last />
+            {showIban ? <Text style={[type.meta, { paddingTop: space(2) }]}>{t('Tap the IBAN again to copy it.')}</Text> : null}
           </Reveal>
 
           <Reveal index={3}>
             {txs.error ? (
               <View style={{ paddingTop: space(6) }}>
-                <Attn action="Try again" onAction={() => txs.refetch()}>
+                <Attn action={t('Try again')} onAction={() => txs.refetch()}>
                   {txs.error.message}
                 </Attn>
               </View>
@@ -144,22 +159,22 @@ export default function AccountScreen() {
                 ))}
               </View>
             ) : groups.length === 0 ? (
-              <Text style={[type.lead, { paddingTop: space(6) }]}>{`No transactions in the last ${days} days.`}</Text>
+              <Text style={[type.lead, { paddingTop: space(6) }]}>{t('No transactions in the last {n} days.', { n: days })}</Text>
             ) : (
               groups.map((g) => (
                 <View key={g.key}>
                   <SectionLabel right={formatMoney(g.net, a.currency)}>{g.label}</SectionLabel>
-                  {g.items.map((t, i) => (
+                  {g.items.map((tx, i) => (
                     <Pressable
-                      key={t.id}
-                      onPress={() => router.push({ pathname: '/payment/[id]', params: { id: t.id } })}
+                      key={tx.id}
+                      onPress={() => router.push({ pathname: '/payment/[id]', params: { id: tx.id } })}
                       style={({ pressed }) => [st.tx, i < g.items.length - 1 && st.divider, pressed && { backgroundColor: colors.muted }]}>
-                      <Text style={st.day}>{t.date.slice(8, 10)}</Text>
+                      <Text style={st.day}>{tx.date.slice(8, 10)}</Text>
                       <Text style={[type.body, { flex: 1 }]} numberOfLines={1}>
-                        {tidyMerchant(t.merchant_name ?? t.description)}
+                        {merchantName(tx.merchant_name ?? tx.description, own, t.lang)}
                       </Text>
-                      {missingIds.has(t.id) ? <FileWarning size={15} strokeWidth={1.5} color={hex.attn} /> : null}
-                      <Text style={[st.amount, t.amount > 0 && { color: colors.success }]}>{formatMoney(t.amount, t.currency)}</Text>
+                      {missingIds.has(tx.id) ? <FileWarning size={15} strokeWidth={1.5} color={hex.attn} /> : null}
+                      <Text style={[st.amount, tx.amount > 0 && { color: colors.success }]}>{formatMoney(tx.amount, tx.currency)}</Text>
                     </Pressable>
                   ))}
                 </View>
@@ -167,7 +182,7 @@ export default function AccountScreen() {
             )}
             {!txs.isPending && !txs.error ? (
               <View style={{ paddingTop: space(6), alignItems: 'center' }}>
-                <Button variant="link" title={txs.isFetching ? 'Loading…' : 'Show older'} onPress={() => setDays((d) => d + STEP_DAYS)} disabled={txs.isFetching} />
+                <Button variant="link" title={txs.isFetching ? t('Loading…') : t('Show older')} onPress={() => txs.fetchNextPage()} disabled={txs.isFetching} />
               </View>
             ) : null}
           </Reveal>

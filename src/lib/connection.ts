@@ -2,6 +2,8 @@ import * as SecureStore from 'expo-secure-store';
 import Storage from 'expo-sqlite/kv-store';
 import { useSyncExternalStore } from 'react';
 
+import { tr } from './i18n';
+
 /**
  * Where the app talks to: the server origin and company are plain settings,
  * the API key lives in the Keychain (this device only, readable after the
@@ -60,5 +62,8 @@ export function normalizeServerUrl(input: string): string {
   let s = input.trim();
   if (!/^https?:\/\//i.test(s)) s = `https://${s}`;
   const u = new URL(s);
+  // The key travels in every request: plain http only for a dev server on this machine.
+  const local = /^(localhost|127\.0\.0\.1)(:\d+)?$/.test(u.host);
+  if (u.protocol !== 'https:' && !(__DEV__ && local)) throw new Error(tr('The server must use https.'));
   return `${u.protocol}//${u.host}`;
 }

@@ -5,17 +5,21 @@ import { Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native'
 
 import { Skeleton } from '@/components/motion';
 import { Attn, EmptyState, TopBar } from '@/components/ui';
-import { formatMoney, tidyMerchant } from '@/lib/format';
+import { formatMoney } from '@/lib/format';
+import { useT } from '@/lib/i18n';
 import { useToBook } from '@/lib/queries';
 import { colors, fonts, space, type } from '@/lib/theme';
+import { merchantName, useMerchantNames } from '@/lib/merchants';
 
 /** Bank transactions not booked yet; tap one to book it. */
 export default function ToBook() {
+  const own = useMerchantNames();
+  const t = useT();
   const q = useToBook();
   const rows = q.data ?? [];
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <TopBar title="To book" back />
+      <TopBar title={t('To book')} back />
       <FlashList
         data={rows}
         keyExtractor={(t) => t.id}
@@ -24,7 +28,7 @@ export default function ToBook() {
         ListHeaderComponent={
           q.error ? (
             <View style={{ paddingTop: space(4) }}>
-              <Attn action="Try again" onAction={() => q.refetch()}>
+              <Attn action={t('Try again')} onAction={() => q.refetch()}>
                 {q.error.message}
               </Attn>
             </View>
@@ -38,18 +42,18 @@ export default function ToBook() {
               ))}
             </View>
           ) : (
-            <EmptyState icon={CircleCheck} title="All booked" message="Every bank transaction in this period is in the books." />
+            <EmptyState icon={CircleCheck} title={t('All booked')} message={t('Every bank transaction in this period is in the books.')} />
           )
         }
-        renderItem={({ item: t, index }) => (
+        renderItem={({ item: tx, index }) => (
           <Pressable
-            onPress={() => router.push({ pathname: '/book/[id]', params: { id: t.id } })}
+            onPress={() => router.push({ pathname: '/book/[id]', params: { id: tx.id } })}
             style={({ pressed }) => [st.row, index < rows.length - 1 && st.divider, pressed && { backgroundColor: colors.muted }]}>
-            <Text style={st.date}>{t.date.slice(0, 10)}</Text>
+            <Text style={st.date}>{tx.date.slice(0, 10)}</Text>
             <Text style={[type.body, { flex: 1 }]} numberOfLines={1}>
-              {tidyMerchant(t.merchant_name ?? t.description)}
+              {merchantName(tx.merchant_name ?? tx.description, own, t.lang)}
             </Text>
-            <Text style={[st.amount, t.amount > 0 && { color: colors.success }]}>{formatMoney(t.amount, t.currency)}</Text>
+            <Text style={[st.amount, tx.amount > 0 && { color: colors.success }]}>{formatMoney(tx.amount, tx.currency)}</Text>
           </Pressable>
         )}
       />

@@ -2,10 +2,13 @@ import * as Crypto from 'expo-crypto';
 import { Directory, File, Paths, UploadType } from 'expo-file-system';
 import Storage from 'expo-sqlite/kv-store';
 import { useSyncExternalStore } from 'react';
+import { AppState } from 'react-native';
 
-import { ApiError, attachDocument, documentsUrl, request, type UploadedDocument } from './api';
+import { ApiError, attachDocument, documentsUrl, request, serverMessage, type UploadedDocument } from './api';
 import { verify } from './checks';
 import { loadConnection, type Connection } from './connection';
+import { formatMoney } from './format';
+import { getLang, localeOf, tr } from './i18n';
 import { completeUpload, createUpload, type Extraction } from './mcp';
 import { showToast } from './toast';
 
@@ -46,13 +49,25 @@ export type Capture = {
   attachedAt?: string;
   attempts: number;
   error?: string;
+  /** Not before this time: failed uploads back off instead of retrying every minute. */
+  nextAttemptAt?: string;
+  /** Server and company it was captured for; it never uploads anywhere else. */
+  owner?: string;
+  /** Sent as an expense claim (utlägg): no longer matched to bank payments, not claimable twice. */
+  claimedAt?: string;
 };
+
+const ownerOf = (c: Pick<Connection, 'serverUrl' | 'companyId'>) => `${c.serverUrl}|${c.companyId}`;
 
 const KEY = 'accounted.captures';
 const MAX_BYTES = 10 * 1024 * 1024; // server limit (DOC_UPLOAD_TOO_LARGE)
 const KEEP_DAYS = 30;
 
+// Waiting to upload: Documents, which iOS backs up, so a receipt is never lost
+// before the server has it. Archived on the server: Caches, which iOS never
+// backs up, so receipts do not end up in iCloud backups.
 const dir = new Directory(Paths.document, 'captures');
+const archivedDir = new Directory(Paths.cache, 'captures');
 
 let items: Capture[] = (() => {
   try {
@@ -63,23 +78,43 @@ let items: Capture[] = (() => {
 })();
 const listeners = new Set<() => void>();
 
-function commit(next: Capture[]) {
-  items = next;
+// Writing the whole queue is a synchronous JSON write: progress-only changes are
+// batched, everything that matters (a new receipt, an archive, an attach, a
+// claim) is written at once.
+let pendingWrite: ReturnType<typeof setTimeout> | null = null;
+function persist() {
+  if (pendingWrite) clearTimeout(pendingWrite);
+  pendingWrite = null;
   Storage.setItemSync(KEY, JSON.stringify(items));
+}
+AppState.addEventListener('change', (s) => s !== 'active' && pendingWrite && persist());
+
+function commit(next: Capture[], deferWrite = false) {
+  items = next;
+  if (!deferWrite) persist();
+  else if (!pendingWrite) pendingWrite = setTimeout(persist, 400);
   listeners.forEach((l) => l());
 }
+
+const PROGRESS_ONLY = new Set(['state', 'attempts', 'error', 'nextAttemptAt']);
 function patch(id: string, p: Partial<Capture>) {
-  commit(items.map((c) => (c.id === id ? { ...c, ...p } : c)));
+  const progressOnly = Object.keys(p).every((k) => PROGRESS_ONLY.has(k)) && (p.state === undefined || p.state === 'uploading' || p.state === 'attaching');
+  commit(
+    items.map((c) => (c.id === id ? { ...c, ...p } : c)),
+    progressOnly,
+  );
 }
 
+function subscribe(l: () => void) {
+  listeners.add(l);
+  return () => {
+    listeners.delete(l);
+  };
+}
+const snapshot = () => items;
+
 export function useCaptures(): Capture[] {
-  return useSyncExternalStore(
-    (l) => {
-      listeners.add(l);
-      return () => listeners.delete(l);
-    },
-    () => items,
-  );
+  return useSyncExternalStore(subscribe, snapshot);
 }
 
 // Upload progress lives in memory only (0..1 per capture id); a restart simply shows "Waiting".
@@ -100,13 +135,34 @@ export function useUploadProgress(id: string): number | null {
   );
 }
 
-export const captureFile = (c: Capture) => new File(dir, ...c.localName.split('/'));
+export const captureFile = (c: Capture) => {
+  const parts = c.localName.split('/');
+  const archived = new File(archivedDir, ...parts);
+  return archived.exists ? archived : new File(dir, ...parts);
+};
+
+/** Once the server has the receipt: move the local copy out of what iOS backs up. */
+function moveToArchived(c: Capture) {
+  try {
+    const from = new File(dir, ...c.localName.split('/'));
+    if (!from.exists) return;
+    const folder = new Directory(archivedDir, c.id);
+    if (!folder.exists) folder.create({ intermediates: true });
+    from.move(new File(folder, from.name));
+    const old = new Directory(dir, c.id);
+    if (old.exists && old.list().length === 0) old.delete();
+  } catch {
+    // Not moved is not lost: the file stays where it was.
+  }
+}
 
 function removeLocal(c: Capture) {
   const f = captureFile(c);
   if (f.exists) f.delete();
-  const folder = new Directory(dir, c.id);
-  if (c.localName.includes('/') && folder.exists) folder.delete();
+  for (const root of [dir, archivedDir]) {
+    const folder = new Directory(root, c.id);
+    if (c.localName.includes('/') && folder.exists) folder.delete();
+  }
 }
 
 function hex(buf: ArrayBuffer): string {
@@ -138,7 +194,7 @@ export async function enqueue(input: {
   const size = target.size ?? 0;
   if (size > MAX_BYTES) {
     folder.delete();
-    throw new Error(`The file is ${(size / 1048576).toFixed(1)} MB; the server accepts at most 10 MB.`);
+    throw new Error(tr('The file is {size} MB; the server accepts at most 10 MB.', { size: (size / 1048576).toLocaleString(localeOf(getLang()), { minimumFractionDigits: 1, maximumFractionDigits: 1 }) }));
   }
   const capture: Capture = {
     id,
@@ -153,6 +209,7 @@ export async function enqueue(input: {
     transaction: input.transaction,
     state: 'queued',
     attempts: 0,
+    ...(loadConnection() ? { owner: ownerOf(loadConnection()!) } : {}),
   };
   commit([capture, ...items]);
   void runQueue();
@@ -161,12 +218,12 @@ export async function enqueue(input: {
 
 /** Link an already archived capture to a transaction (the "match later" path). */
 export function assignTransaction(id: string, transaction: NonNullable<Capture['transaction']>) {
-  patch(id, { transaction, attachedAt: undefined, state: 'queued', error: undefined });
+  patch(id, { transaction, attachedAt: undefined, state: 'queued', error: undefined, nextAttemptAt: undefined });
   void runQueue();
 }
 
 export function retry(id: string) {
-  patch(id, { state: 'queued', error: undefined });
+  patch(id, { state: 'queued', error: undefined, nextAttemptAt: undefined }); // a tap retries now
   void runQueue();
 }
 
@@ -204,7 +261,7 @@ async function uploadViaInbox(conn: Connection, c: Capture): Promise<Uploaded> {
   });
   // 409 = these bytes already sit at this path (a retry after a lost response).
   if ((put.status < 200 || put.status >= 300) && put.status !== 409) {
-    throw new ApiError(put.status, `HTTP_${put.status}`, `Upload failed (${put.status}).`);
+    throw new ApiError(put.status, `HTTP_${put.status}`, tr('Upload failed ({status}).', { status: put.status }));
   }
   setProgress(c.id, 1);
   const done = await completeUpload(conn, uploadId, c.fileName, c.mimeType);
@@ -229,7 +286,7 @@ async function uploadViaRest(conn: Connection, c: Capture): Promise<Uploaded> {
   } catch {}
   if (res.status < 200 || res.status >= 300 || !body?.data) {
     const e = body?.error;
-    throw new ApiError(res.status, e?.code ?? `HTTP_${res.status}`, e?.message_en ?? e?.message ?? `Upload failed (${res.status}).`);
+    throw new ApiError(res.status, e?.code ?? `HTTP_${res.status}`, serverMessage(e) ?? tr('Upload failed ({status}).', { status: res.status }));
   }
   const doc = body.data as UploadedDocument;
   return { documentId: doc.id, sha256: doc.sha256_hash };
@@ -241,7 +298,7 @@ export function readingLine(x: Extraction | null | undefined): string {
   const total = x.totals?.total;
   return [
     x.supplier?.name,
-    total != null ? new Intl.NumberFormat('sv-SE', { style: 'currency', currency: x.invoice?.currency || 'SEK' }).format(total) : null,
+    total != null ? formatMoney(total, x.invoice?.currency || 'SEK') : null,
     x.invoice?.invoiceDate,
   ]
     .filter(Boolean)
@@ -262,7 +319,16 @@ async function work() {
   const conn = loadConnection();
   if (!conn) return;
   prune();
-  for (const c of items.filter((x) => x.state === 'queued' || x.state === 'uploading' || x.state === 'attaching')) {
+  const me = ownerOf(conn);
+  const now = Date.now();
+  const due = items.filter(
+    (x) =>
+      (x.state === 'queued' || x.state === 'uploading' || x.state === 'attaching') &&
+      // A receipt captured for another server or company waits for that one to be connected again.
+      (!x.owner || x.owner === me) &&
+      (!x.nextAttemptAt || new Date(x.nextAttemptAt).getTime() <= now),
+  );
+  for (const c of due) {
     try {
       let documentId = c.documentId;
       if (!documentId) {
@@ -274,11 +340,11 @@ async function work() {
         });
         setProgress(c.id, null);
         if (up.sha256 !== c.sha256) {
-          showToast('Upload failed the integrity check. Keep the paper receipt.', 'error');
+          showToast(tr('Upload failed the integrity check. Keep the paper receipt.'), 'error');
           patch(c.id, {
             state: 'failed',
             documentId: up.documentId,
-            error: 'The archived file does not match the capture (hash mismatch). Keep the paper receipt.',
+            error: tr('The archived file does not match the capture (hash mismatch). Keep the paper receipt.'),
           });
           continue;
         }
@@ -295,36 +361,50 @@ async function work() {
         await attachDocument(conn, c.transaction.id, documentId);
         patch(c.id, { attachedAt: new Date().toISOString() });
       }
-      patch(c.id, { state: 'done', error: undefined });
+      patch(c.id, { state: 'done', error: undefined, nextAttemptAt: undefined, uploadUrl: undefined });
+      moveToArchived(c);
       const latest = items.find((x) => x.id === c.id);
       const v = verify(latest?.extraction, c.transaction);
       showToast(
         c.transaction
           ? v.state === 'warn'
-            ? `Attached to ${c.transaction.label}. ${v.summary}.`
-            : `Receipt attached to ${c.transaction.label}`
+            ? tr('Attached to {name}. {summary}.', { name: c.transaction.label, summary: v.summary })
+            : tr('Receipt attached to {name}', { name: c.transaction.label })
           : v.state === 'unread'
-            ? 'Receipt archived'
-            : `Receipt read: ${readingLine(latest?.extraction)}`,
+            ? tr('Receipt archived')
+            : tr('Receipt read: {reading}', { reading: readingLine(latest?.extraction) }),
         v.state === 'warn' ? 'error' : 'default',
       );
     } catch (e) {
       setProgress(c.id, null);
       const msg = e instanceof Error ? e.message : String(e);
       const failedHard = !retriable(e);
-      patch(c.id, { state: failedHard ? 'failed' : 'queued', error: msg });
-      if (failedHard) showToast('Upload failed. Keep the paper receipt.', 'error');
+      // Back off: 30 s, 1, 2, 4 … minutes, at most 30 minutes between tries.
+      const wait = Math.min(30 * 60_000, 30_000 * 2 ** Math.max(0, (items.find((x) => x.id === c.id)?.attempts ?? 1) - 1));
+      patch(c.id, {
+        state: failedHard ? 'failed' : 'queued',
+        error: msg,
+        nextAttemptAt: failedHard ? undefined : new Date(Date.now() + wait).toISOString(),
+      });
+      if (failedHard) showToast(tr('Upload failed. Keep the paper receipt.'), 'error');
       if (e instanceof ApiError && e.status === 0) break; // offline: stop, retry on reconnect
     }
   }
 }
 
 function prune() {
+  // Receipts archived before this moved to Caches (moveToArchived is a no-op once moved).
+  items.filter((c) => c.state === 'done').forEach(moveToArchived);
   const cutoff = Date.now() - KEEP_DAYS * 86400_000;
   const old = items.filter((c) => c.state === 'done' && new Date(c.createdAt).getTime() < cutoff);
   if (!old.length) return;
   old.forEach(removeLocal);
   commit(items.filter((c) => !old.includes(c)));
+}
+
+/** Mark a receipt as sent for an expense claim. */
+export function markClaimed(id: string) {
+  patch(id, { claimedAt: new Date().toISOString() });
 }
 
 export const pendingCount = (list: Capture[]) => list.filter((c) => c.state !== 'done').length;

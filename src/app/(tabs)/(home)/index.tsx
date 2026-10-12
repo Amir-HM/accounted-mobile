@@ -1,26 +1,37 @@
 import { router } from 'expo-router';
-import { ArrowLeftRight, Bot, ChevronRight, FileWarning, ScanLine, Upload } from 'lucide-react-native';
+import { ArrowLeftRight, Bot, CircleCheck, FileText, FileWarning, Landmark, Link2, Percent, ScanLine, Upload, type LucideIcon } from 'lucide-react-native';
+import { useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { MonthBars } from '@/components/month-bars';
 import { Reveal, Skeleton } from '@/components/motion';
-import { Attn, Button, Row, SectionLabel, TopBar } from '@/components/ui';
+import { Attn, Button, Row, SectionLabel, Tag } from '@/components/ui';
 import { captureUnlinked } from '@/lib/capture';
 import { useNamedAccounts } from '@/lib/accounts';
-import type { Kpi } from '@/lib/api';
+import { useReceiptMatches } from '@/lib/matches';
+import { ApiError, type Kpi } from '@/lib/api';
 import { useConnection } from '@/lib/connection';
-import { formatMoney, formatMoneyShort, maskIban } from '@/lib/format';
+import { dateFormat, formatMoney, formatMoneyShort, localDate, maskIban } from '@/lib/format';
+import { capitalize, useT, type T } from '@/lib/i18n';
 import { usePref } from '@/lib/prefs';
-import { lookbackLabel, useCashAccounts, useCurrentKpi, useHiddenIds, useLookbackDays, useMissingReceipts, usePendingOps, useToBook } from '@/lib/queries';
+import { bankNeedsAttention, isOverdue, useBankConnections, useCashAccounts, useInvoices, useSupplierInvoicesToApprove, useCurrentKpi, useHiddenIds, useMissingReceipts, usePendingOps, useToBook } from '@/lib/queries';
 import { pendingCount, useCaptures } from '@/lib/queue';
 import { colors, fonts, radius, space, type, useHex } from '@/lib/theme';
 
 const STALE_HOURS = 36;
-const today = new Intl.DateTimeFormat('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
 
-function greeting(now = new Date()) {
+function greeting(t: T, now = new Date()) {
   const h = now.getHours();
-  return h < 5 ? 'Good evening.' : h < 10 ? 'Good morning.' : h < 18 ? 'Good day.' : 'Good evening.';
+  return h < 5 ? t('Good evening.') : h < 10 ? t('Good morning.') : h < 18 ? t('Good day.') : t('Good evening.');
+}
+
+/** "Monday 12 October" / "Måndag 12 oktober". */
+const todayLabel = (t: T) => capitalize(dateFormat(t.lang, 'weekdayDay', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date()));
+
+/** "2025/2026", or "2026" when the fiscal year is the calendar year: the web's year label. */
+function fiscalYearLabel(start: string, end: string) {
+  return start.slice(0, 4) === end.slice(0, 4) ? start.slice(0, 4) : `${start.slice(0, 4)}/${end.slice(0, 4)}`;
 }
 
 /** Months of the fiscal year up to and including this one (the API returns the whole year). */
@@ -32,26 +43,31 @@ function monthsSoFar(k: Kpi) {
 }
 
 /** "Covers roughly N days of expenses", the web KPI caption. */
-function runway(k: Kpi) {
+function runway(k: Kpi, t: T) {
   const days = Math.max(1, (Date.now() - new Date(`${k.period.start}T00:00:00`).getTime()) / 86400_000);
   const perDay = k.totalExpenses / days;
-  if (perDay <= 0 || k.cashPosition <= 0) return 'In the books, all bank accounts';
-  return `Covers roughly ${Math.round(k.cashPosition / perDay)} days of expenses`;
+  if (perDay <= 0 || k.cashPosition <= 0) return t('In the books, all bank accounts');
+  return t('Covers roughly {days} days of expenses', { days: Math.round(k.cashPosition / perDay) });
 }
 
 export default function Overview() {
+  const t = useT();
   const conn = useConnection();
-  const hex = useHex();
+  const insets = useSafeAreaInsets();
+  const [now] = useState(() => Date.now()); // read once per visit, not on every render
   const accounts = useCashAccounts();
   const kpi = useCurrentKpi();
   const missing = useMissingReceipts();
   const hidden = useHiddenIds();
   const captures = useCaptures();
-  const days = useLookbackDays();
   const bookOn = usePref('bookInAccounted');
   const toBook = useToBook();
   const pending = usePendingOps();
-  const approvals = pending.data?.length ?? 0;
+  const supplierApprovals = useSupplierInvoicesToApprove();
+  const approvals = (pending.data?.length ?? 0) + (supplierApprovals.data?.length ?? 0);
+  const banks = useBankConnections();
+  const matches = useReceiptMatches();
+  const invoices = useInvoices();
 
   const inFlight = new Set(captures.filter((c) => c.transaction && c.state !== 'failed').map((c) => c.transaction!.id));
   const missingCount = (missing.data ?? []).filter((t) => !hidden.includes(t.id) && !inFlight.has(t.id)).length;
@@ -64,110 +80,97 @@ export default function Overview() {
     .filter(Boolean)
     .sort()
     .at(-1);
-  const staleHours = latest ? Math.round((Date.now() - new Date(latest).getTime()) / 3600_000) : 0;
+  const staleHours = latest ? Math.round((now - new Date(latest).getTime()) / 3600_000) : 0;
+  const brokenBanks = (banks.data ?? []).filter((b) => bankNeedsAttention(b, now));
+  const todayIso = localDate(new Date(now));
+  const unpaidInvoices = (invoices.data?.invoices ?? []).filter((i) => i.remaining_amount > 0);
+  const overdueInvoices = unpaidInvoices.filter((i) => isOverdue(i, todayIso));
+
+  const todos: Todo[] = [];
+  if (matches.length) todos.push({ key: 'matches', label: t('{n} to attach', { n: matches.length }), icon: Link2, tone: 'attn', onPress: () => router.navigate('/receipts') });
+  if (missingCount) todos.push({ key: 'missing', label: t(missingCount === 1 ? '{n} receipt' : '{n} receipts', { n: missingCount }), icon: FileWarning, tone: 'attn', onPress: () => router.navigate('/receipts') });
+  if (approvals) todos.push({ key: 'approvals', label: t('{n} to approve', { n: approvals }), icon: Bot, tone: 'attn', onPress: () => router.push('/approvals') });
+  if (brokenBanks.length) todos.push({ key: 'banks', label: brokenBanks.length === 1 ? (brokenBanks[0].bank ?? t('Bank')) : t('{n} banks', { n: brokenBanks.length }), icon: Landmark, tone: 'attn', onPress: () => router.push('/banks') });
+  if (overdueInvoices.length) todos.push({ key: 'overdue', label: t('{n} overdue', { n: overdueInvoices.length }), icon: FileText, tone: 'attn', onPress: () => router.push('/invoices') });
+  if (bookOn && toBook.data?.length) todos.push({ key: 'book', label: t('{n} to book', { n: toBook.data.length }), icon: ArrowLeftRight, onPress: () => router.push('/to-book') });
+  if (failed) todos.push({ key: 'failed', label: t(failed === 1 ? '{n} upload failed' : '{n} uploads failed', { n: failed }), icon: Upload, tone: 'error', onPress: () => router.navigate('/receipts') });
+  else if (uploading) todos.push({ key: 'uploading', label: t('Uploading {n}', { n: uploading }), icon: Upload, onPress: () => router.navigate('/receipts') });
 
   const refreshing = accounts.isRefetching || kpi.isRefetching || missing.isRefetching;
   const refresh = () => Promise.all([accounts.refetch(), kpi.refetch(), missing.refetch()]);
   const error = accounts.error ?? kpi.error ?? missing.error;
   const k = kpi.data?.kpi;
+  const fy = kpi.data ? fiscalYearLabel(kpi.data.period.period_start, kpi.data.period.period_end) : '';
+  // Before next year's period exists, the latest one shown has ended: no "so far" then.
+  const ongoing = !kpi.data || localDate() <= kpi.data.period.period_end;
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <TopBar title="Overview" right={<Button size="sm" icon={ScanLine} title="Scan" onPress={() => captureUnlinked('scan')} />} />
+    <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: insets.top }}>
       <ScrollView
+        contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={{ paddingHorizontal: space(4), paddingBottom: space(12) }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}
       >
-        {/* Greeting */}
-        <Reveal index={0} style={{ paddingTop: space(6), gap: space(4) }}>
+        {/* Greeting, with Scan on the same line: no top bar, so more fits above the fold */}
+        <Reveal index={0} style={{ paddingTop: space(8), gap: space(4) }}>
+          <View style={{ gap: space(2) }}>
+            <View style={st.greetingRow}>
+              <Text style={[type.display, { flex: 1 }]} numberOfLines={1} adjustsFontSizeToFit>
+                {greeting(t)}
+              </Text>
+              <Button size="sm" icon={ScanLine} title={t('Scan')} onPress={() => captureUnlinked('scan')} />
+            </View>
+            <Text style={type.meta}>{`${todayLabel(t)} · ${conn?.companyName ?? ''}`}</Text>
+          </View>
           {error ? (
-            <Attn action="Try again" onAction={refresh}>
+            <Attn action={t('Try again')} onAction={refresh}>
               {error.message}
             </Attn>
-          ) : staleHours >= STALE_HOURS ? (
-            <Attn>{`The bank has not synced for ${Math.round(staleHours / 24)} days. Renew the bank connection in Accounted on the web.`}</Attn>
+          ) : staleHours >= STALE_HOURS && !brokenBanks.length ? (
+            <Attn action={t('See banks')} onAction={() => router.push('/banks')}>
+              {t('The bank has not synced for {n} days.', { n: Math.round(staleHours / 24) })}
+            </Attn>
           ) : null}
-          <View style={{ gap: space(2) }}>
-            <Text style={type.display}>{greeting()}</Text>
-            <Text style={type.meta}>{`${today.format(new Date())} · ${conn?.companyName ?? ''}`}</Text>
-          </View>
         </Reveal>
 
-        {/* To do */}
+        {/* What needs you: one line of pills, each opening its screen */}
         <Reveal index={1} style={{ paddingTop: space(6) }}>
-          <View style={st.card}>
-            <TodoRow
-              icon={<FileWarning size={18} strokeWidth={1.5} color={missingCount ? hex.attn : hex.mutedForeground} />}
-              title={missing.isPending || missingCount ? 'Payments missing a receipt' : 'Every payment has a receipt'}
-              meta={lookbackLabel(days)}
-              count={missing.isPending ? null : missingCount}
-              onPress={() => router.navigate('/receipts')}
-            />
-            {approvals ? (
-              <>
-                <View style={st.innerDivider} />
-                <TodoRow
-                  icon={<Bot size={18} strokeWidth={1.5} color={hex.attn} />}
-                  title="Waiting for your approval"
-                  meta="Prepared by Claude or the receipt hunt"
-                  count={approvals}
-                  onPress={() => router.push('/approvals')}
-                />
-              </>
-            ) : null}
-            {bookOn ? (
-              <>
-                <View style={st.innerDivider} />
-                <TodoRow
-                  icon={<ArrowLeftRight size={18} strokeWidth={1.5} color={hex.mutedForeground} />}
-                  title={toBook.data?.length === 0 ? 'Everything is booked' : 'Payments to book'}
-                  meta={lookbackLabel(days)}
-                  count={toBook.isPending ? null : (toBook.data?.length ?? 0)}
-                  onPress={() => router.push('/to-book')}
-                />
-              </>
-            ) : null}
-            {uploading ? (
-              <>
-                <View style={st.innerDivider} />
-                <TodoRow
-                  icon={<Upload size={18} strokeWidth={1.5} color={failed ? hex.destructive : hex.mutedForeground} />}
-                  title={failed ? 'Uploads need attention' : 'Uploading receipts'}
-                  meta={failed ? 'Keep the paper until they are archived' : 'Safe to close the app'}
-                  count={uploading}
-                  onPress={() => router.navigate('/receipts')}
-                />
-              </>
-            ) : null}
-          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={st.pillsScroll} contentContainerStyle={st.pills}>
+            {todos.length ? (
+              todos.map(({ key, ...t }) => <TodoPill key={key} {...t} />)
+            ) : missing.isPending ? (
+              <Skeleton width={140} height={36} style={{ borderRadius: 18 }} />
+            ) : (
+              <TodoPill key="done" label={t('All done')} tone="done" icon={CircleCheck} onPress={() => router.navigate('/receipts')} />
+            )}
+          </ScrollView>
         </Reveal>
 
         {/* Money */}
         {k ? (
           <>
             <Reveal index={2} style={{ paddingTop: space(8), gap: space(2) }}>
-              <Text style={type.label}>Cash</Text>
+              <Text style={type.label}>{t('Cash')}</Text>
               <Text selectable style={[type.number, { fontSize: 44, lineHeight: 50 }]}>
                 {formatMoney(k.cashPosition)}
               </Text>
-              <Text style={type.meta}>{runway(k)}</Text>
+              <Text style={type.meta}>{runway(k, t)}</Text>
             </Reveal>
 
             <Reveal index={3} style={st.grid}>
               <Tile
-                label="Result"
+                label={t('Result')}
                 value={formatMoneyShort(k.netResult)}
                 tone={k.netResult < 0 ? 'negative' : undefined}
-                caption="this year"
+                tag={fy}
               />
-              <Tile label="VAT" value={formatMoneyShort(k.vatLiability)} caption="to pay" />
-              <Tile label="Revenue" value={formatMoneyShort(k.totalRevenue)} caption="this year" />
-              <Tile label="Expenses" value={formatMoneyShort(k.totalExpenses)} caption="this year" />
+              <Tile label={t('VAT')} value={formatMoneyShort(k.vatLiability)} caption={t('to pay')} onPress={() => router.push('/vat')} />
+              <Tile label={t('Revenue')} value={formatMoneyShort(k.totalRevenue)} tag={fy} />
+              <Tile label={t('Expenses')} value={formatMoneyShort(k.totalExpenses)} tag={fy} />
             </Reveal>
 
             <Reveal index={4} style={{ paddingTop: space(8) }}>
-              <MonthBars months={monthsSoFar(k)} />
-              <Text style={[type.meta, { paddingTop: space(3) }]}>{kpi.data?.period.name}</Text>
+              <MonthBars months={monthsSoFar(k)} start={kpi.data!.period.period_start} yearLabel={fy} ongoing={ongoing} />
             </Reveal>
           </>
         ) : kpi.isPending ? (
@@ -186,7 +189,7 @@ export default function Overview() {
         {/* Bank */}
         {list.length ? (
           <Reveal index={5} style={{ paddingTop: space(6) }}>
-            <SectionLabel right={latest ? `updated ${relativeHours(staleHours)}` : undefined}>Bank accounts</SectionLabel>
+            <SectionLabel right={latest ? t('updated {when}', { when: relativeHours(staleHours, t) }) : undefined}>{t('Bank accounts')}</SectionLabel>
             {list.map((a, i) => (
               <Row
                 key={a.cash_account_id}
@@ -200,87 +203,107 @@ export default function Overview() {
             ))}
           </Reveal>
         ) : null}
+
+        {/* More from the books */}
+        <Reveal index={6} style={{ paddingTop: space(6) }}>
+          <SectionLabel>{t('More')}</SectionLabel>
+          <Row
+            icon={FileText}
+            title={t('Invoices')}
+            meta={
+              invoices.error instanceof ApiError && invoices.error.code === 'INSUFFICIENT_SCOPE'
+                ? t('Sign in again to see them')
+                : invoices.data
+                ? unpaidInvoices.length
+                  ? [t('{n} unpaid', { n: unpaidInvoices.length }), overdueInvoices.length ? t('{n} overdue', { n: overdueInvoices.length }) : null]
+                      .filter(Boolean)
+                      .join(' · ')
+                  : t('Nothing outstanding')
+                : undefined
+            }
+            onPress={() => router.push('/invoices')}
+          />
+          <Row
+            icon={Landmark}
+            title={t('Bank connections')}
+            meta={banks.data ? (brokenBanks.length ? t('Needs attention') : t('All connected')) : undefined}
+            onPress={() => router.push('/banks')}
+          />
+          <Row icon={Percent} title={t('VAT declaration')} meta={t('This period so far')} onPress={() => router.push('/vat')} last />
+        </Reveal>
       </ScrollView>
     </View>
   );
 }
 
-function TodoRow({
-  icon,
-  title,
-  meta,
-  count,
-  onPress,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  meta: string;
-  count: number | null;
-  onPress: () => void;
-}) {
+type Todo = { key: string; label: string; icon: LucideIcon; tone?: 'attn' | 'error' | 'done'; onPress: () => void };
+
+function TodoPill({ label, icon: Icon, tone, onPress }: Omit<Todo, 'key'>) {
   const hex = useHex();
+  const color = tone === 'attn' ? hex.attn : tone === 'error' ? hex.destructive : tone === 'done' ? hex.success : hex.mutedForeground;
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [st.todo, pressed && { backgroundColor: colors.muted }]}>
-      {icon}
-      <View style={{ flex: 1, gap: 2 }}>
-        <Text style={type.body} numberOfLines={1}>
-          {title}
-        </Text>
-        <Text style={type.meta}>{meta}</Text>
-      </View>
-      {count == null ? (
-        <Skeleton width={28} height={20} />
-      ) : count > 0 ? (
-        <View style={st.count}>
-          <Text style={st.countText}>{count}</Text>
-        </View>
-      ) : null}
-      <ChevronRight size={16} strokeWidth={1.5} color={hex.mutedForeground} />
+    <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [st.pill, pressed && { backgroundColor: colors.muted }]}>
+      <Icon size={16} strokeWidth={1.5} color={color} />
+      <Text style={st.pillText}>{label}</Text>
     </Pressable>
   );
 }
 
-function Tile({ label, value, caption, tone }: { label: string; value: string; caption?: string; tone?: 'negative' }) {
+function Tile({
+  label,
+  value,
+  caption,
+  tag,
+  tone,
+  onPress,
+}: {
+  label: string;
+  value: string;
+  caption?: string;
+  /** The period as a pill, matching the chart's. */
+  tag?: string;
+  tone?: 'negative';
+  onPress?: () => void;
+}) {
   return (
-    <View style={[st.tileBox, st.tile]}>
+    <Pressable
+      disabled={!onPress}
+      onPress={onPress}
+      style={({ pressed }) => [st.tileBox, st.tile, pressed && { backgroundColor: colors.muted }]}
+    >
       <Text style={type.label}>{label}</Text>
       <Text selectable style={[st.tileValue, tone === 'negative' && { color: colors.destructive }]} numberOfLines={1} adjustsFontSizeToFit>
         {value}
       </Text>
-      {caption ? <Text style={type.meta}>{caption}</Text> : null}
-    </View>
+      <View style={st.tileFoot}>{tag ? <Tag>{tag}</Tag> : caption ? <Text style={type.meta}>{caption}</Text> : null}</View>
+    </Pressable>
   );
 }
 
-function relativeHours(h: number) {
-  if (h < 1) return 'just now';
-  if (h < 48) return `${h} h ago`;
-  return `${Math.round(h / 24)} days ago`;
+function relativeHours(h: number, t: T) {
+  if (h < 1) return t('just now');
+  if (h < 48) return t('{n} h ago', { n: h });
+  return t('{n} days ago', { n: Math.round(h / 24) });
 }
 
 const st = StyleSheet.create({
-  card: { borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, borderRadius: radius.surface, overflow: 'hidden' },
-  todo: {
+  pillsScroll: { marginHorizontal: -space(4) },
+  pills: { paddingHorizontal: space(4), gap: space(2) },
+  pill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: space(3),
-    paddingHorizontal: space(4),
-    paddingVertical: space(3),
-    minHeight: 60,
-  },
-  innerDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginLeft: space(12) },
-  count: {
-    backgroundColor: colors.foreground,
+    gap: space(2),
+    height: 36,
+    paddingHorizontal: space(3) + 2,
     borderRadius: radius.pill,
-    minWidth: 24,
-    height: 22,
-    paddingHorizontal: 7,
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
   },
-  countText: { fontFamily: fonts.medium, fontSize: 12, color: colors.onPrimary, fontVariant: ['tabular-nums'] },
+  pillText: { fontFamily: fonts.medium, fontSize: 14, color: colors.foreground, fontVariant: ['tabular-nums'] },
+  greetingRow: { flexDirection: 'row', alignItems: 'center', gap: space(3) },
+  tileFoot: { minHeight: 26, justifyContent: 'center', paddingTop: 2 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: space(3), paddingTop: space(6) },
-  tileBox: { flexBasis: '47%', flexGrow: 1, borderRadius: radius.surface },
+  tileBox: { flexBasis: '47%', flexGrow: 1, borderRadius: radius.panel },
   tile: { borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, padding: space(4), gap: space(1) },
   tileValue: { fontFamily: fonts.display, fontSize: 24, lineHeight: 30, color: colors.foreground, fontVariant: ['tabular-nums'] },
 });

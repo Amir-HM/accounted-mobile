@@ -6,6 +6,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View, type StyleProp, t
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useT } from '@/lib/i18n';
 import { colors, fonts, motion, radius, space, type, useHex } from '@/lib/theme';
 
 const HAIRLINE = StyleSheet.hairlineWidth;
@@ -14,11 +15,12 @@ const HAIRLINE = StyleSheet.hairlineWidth;
 export function TopBar({ title, back, right }: { title: string; back?: boolean; right?: ReactNode }) {
   const insets = useSafeAreaInsets();
   const hex = useHex();
+  const t = useT();
   return (
     <View style={[s.topBar, { paddingTop: insets.top }]}>
       <View style={s.topBarRow}>
         {back ? (
-          <Pressable accessibilityRole="button" accessibilityLabel="Back" hitSlop={12} onPress={() => router.back()} style={s.back}>
+          <Pressable accessibilityRole="button" accessibilityLabel={t('Back')} hitSlop={12} onPress={() => router.back()} style={s.back}>
             <ChevronLeft size={22} strokeWidth={1.5} color={hex.foreground} />
           </Pressable>
         ) : null}
@@ -113,9 +115,12 @@ export function Button({
   busy,
   disabled,
   style,
+  accessibilityLabel,
 }: {
   title?: string;
   icon?: LucideIcon;
+  /** For icon-only buttons. */
+  accessibilityLabel?: string;
   onPress: () => void;
   variant?: 'primary' | 'outline' | 'link';
   size?: 'lg' | 'sm';
@@ -135,7 +140,7 @@ export function Button({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={title}
+      accessibilityLabel={accessibilityLabel ?? title}
       disabled={disabled || busy}
       onPressIn={() => Haptics.selectionAsync()}
       onPress={onPress}
@@ -168,10 +173,13 @@ export function Segmented<K extends string>({
   options,
   value,
   onChange,
+  fill,
 }: {
   options: { key: K; label: string; count?: number }[];
   value: K;
   onChange: (k: K) => void;
+  /** Full width, segments sharing it equally. */
+  fill?: boolean;
 }) {
   const [frames, setFrames] = useState<Record<string, { x: number; width: number }>>({});
   const x = useSharedValue(0);
@@ -186,8 +194,8 @@ export function Segmented<K extends string>({
   const thumb = useAnimatedStyle(() => ({ transform: [{ translateX: x.get() }], width: w.get(), opacity: w.get() ? 1 : 0 }));
 
   return (
-    <View style={s.segmented}>
-      <Animated.View style={[s.thumb, thumb]} />
+    <View style={[s.segmented, fill && s.segmentedFill]}>
+      <Animated.View style={[s.thumb, fill && s.thumbFill, thumb]} />
       {options.map((o) => {
         const on = o.key === value;
         return (
@@ -203,7 +211,7 @@ export function Segmented<K extends string>({
               if (!on) Haptics.selectionAsync();
               onChange(o.key);
             }}
-            style={s.segment}
+            style={[s.segment, fill && s.segmentFill]}
           >
             <Text style={[s.segmentText, !on && { color: colors.mutedForeground }]}>{o.label}</Text>
             {o.count != null ? (
@@ -215,6 +223,27 @@ export function Segmented<K extends string>({
         );
       })}
     </View>
+  );
+}
+
+/** A small outlined pill for a period or a tag ("2025/2026"), like the web's period chips. */
+export function Tag({ children, onPress, accessibilityLabel }: { children: string; onPress?: () => void; accessibilityLabel?: string }) {
+  if (!onPress) {
+    return (
+      <View style={s.tag}>
+        <Text style={s.tagText}>{children}</Text>
+      </View>
+    );
+  }
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? children}
+      onPress={onPress}
+      hitSlop={8}
+      style={({ pressed }) => [s.tag, pressed && { backgroundColor: colors.muted }]}>
+      <Text style={s.tagText}>{children}</Text>
+    </Pressable>
   );
 }
 
@@ -286,6 +315,15 @@ export const s = StyleSheet.create({
     textDecorationLine: 'underline',
     textDecorationColor: colors.border,
   },
+  tag: {
+    alignSelf: 'flex-start',
+    borderWidth: HAIRLINE,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    paddingHorizontal: space(3),
+    paddingVertical: 3,
+  },
+  tagText: { fontFamily: fonts.medium, fontSize: 12, color: colors.foreground, fontVariant: ['tabular-nums'] },
   segmented: {
     flexDirection: 'row',
     alignSelf: 'flex-start',
@@ -301,6 +339,10 @@ export const s = StyleSheet.create({
     paddingHorizontal: space(4),
     minHeight: 34,
   },
+  // Full width keeps the pill shape, like the buttons beside it.
+  segmentedFill: { alignSelf: 'stretch' },
+  segmentFill: { flex: 1, justifyContent: 'center' },
+  thumbFill: {},
   thumb: {
     position: 'absolute',
     top: 3,
