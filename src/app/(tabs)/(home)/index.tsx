@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { ArrowLeftRight, Bot, CircleCheck, FileText, FileWarning, Landmark, Link2, Percent, ScanLine, Upload, type LucideIcon } from 'lucide-react-native';
+import { ArrowLeftRight, Bot, Car, CircleCheck, FileText, FileWarning, Landmark, Link2, Percent, ScanLine, Upload, type LucideIcon } from 'lucide-react-native';
 import { useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -229,6 +229,7 @@ export default function Overview() {
             meta={banks.data ? (brokenBanks.length ? t('Needs attention') : t('All connected')) : undefined}
             onPress={() => router.push('/banks')}
           />
+          <Row icon={Car} title={t('Driving log')} meta={t('Trips and mileage allowance')} onPress={() => router.push('/mileage')} />
           <Row icon={Percent} title={t('VAT declaration')} meta={t('This period so far')} onPress={() => router.push('/vat')} last />
         </Reveal>
       </ScrollView>

@@ -18,7 +18,7 @@ import { showToast } from '@/lib/toast';
 import { colors, radius, space, type, useHex } from '@/lib/theme';
 
 // Operations that attach or register without posting to the ledger: approvable even with phone booking off.
-const NON_POSTING = new Set(['attach_document_to_transaction', 'link_document_to_voucher', 'create_customer', 'create_supplier', 'create_transaction']);
+const NON_POSTING = new Set(['attach_document_to_transaction', 'link_document_to_voucher', 'create_customer', 'create_supplier', 'create_transaction', 'log_mileage_trip']);
 // Where each posting operation keeps the amount it will post (Accounted's own list, unattended-limit.ts).
 const AMOUNT_FIELD: Record<string, string> = {
   create_voucher: 'total_debit',

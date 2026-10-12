@@ -11,7 +11,7 @@ import { tr, useT } from '@/lib/i18n';
 import { signInWithAccounted } from '@/lib/oauth';
 import { colors, fonts, radius, space, type, useHex } from '@/lib/theme';
 
-const SCOPES = 'companies:read, documents:read/write, transactions:read/write, reports:read, invoices:read, suppliers:read/write, bookkeeping:write, pending_operations:read/approve';
+const SCOPES = 'companies:read, documents:read/write, transactions:read/write, reports:read, invoices:read, suppliers:read/write, payroll:read/write, bookkeeping:write, pending_operations:read/approve';
 // A build may preset its own server (app.json → extra.defaultServer).
 const DEFAULT_SERVER = (Constants.expoConfig?.extra?.defaultServer as string | undefined) ?? '';
 
