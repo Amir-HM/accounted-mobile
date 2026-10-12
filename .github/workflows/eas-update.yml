@@ -1,0 +1,51 @@
+# Publish an over-the-air update to installed builds on every merge to main.
+#
+# Builds made with the "production" profile listen to the "production"
+# channel; a build only takes an update with its own runtime version, so a
+# change that needs new native code waits for the next TestFlight build.
+#
+# Needs the repository secret EXPO_TOKEN: an access token for the Expo
+# account that owns the project (expo.dev > Account settings > Access tokens).
+# Until it exists, the job only says so and publishes nothing.
+name: EAS Update
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: eas-update
+  cancel-in-progress: true
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      # The commit message goes through env so quotes in it cannot break the command.
+      MESSAGE: ${{ github.event.head_commit.message || 'Manual publish' }}
+    steps:
+      - name: No EXPO_TOKEN secret yet
+        if: env.EXPO_TOKEN == ''
+        run: echo "Add the EXPO_TOKEN repository secret to publish updates. Nothing was published."
+      - if: env.EXPO_TOKEN != ''
+        uses: actions/checkout@v4
+      - if: env.EXPO_TOKEN != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - if: env.EXPO_TOKEN != ''
+        run: npm ci
+      - name: Typecheck and lint first
+        if: env.EXPO_TOKEN != ''
+        run: npx tsc --noEmit && npx expo lint
+      - if: env.EXPO_TOKEN != ''
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - name: Publish to the production channel
+        if: env.EXPO_TOKEN != ''
+        run: npx eas-cli update --channel production --environment production --message "$MESSAGE" --non-interactive
