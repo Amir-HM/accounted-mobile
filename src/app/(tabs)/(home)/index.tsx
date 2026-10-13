@@ -96,6 +96,14 @@ export default function Overview() {
   if (failed) todos.push({ key: 'failed', label: t(failed === 1 ? '{n} upload failed' : '{n} uploads failed', { n: failed }), icon: Upload, tone: 'error', onPress: () => router.navigate('/receipts') });
   else if (uploading) todos.push({ key: 'uploading', label: t('Uploading {n}', { n: uploading }), icon: Upload, onPress: () => router.navigate('/receipts') });
 
+  // "All done" only when every list behind the pills loaded: a failed or
+  // still-loading one must not read as nothing to do. A scope error means the
+  // sign-in predates that feature, not that loading failed.
+  const todoQueries = [missing, pending, supplierApprovals, banks, invoices, ...(bookOn ? [toBook] : [])];
+  const todoFailed = todoQueries.some((q) => q.error && !(q.error instanceof ApiError && q.error.code === 'INSUFFICIENT_SCOPE'));
+  const todoLoading = todoQueries.some((q) => q.isPending && q.fetchStatus !== 'idle');
+  const retryTodos = () => Promise.all(todoQueries.filter((q) => q.error).map((q) => q.refetch()));
+
   const refreshing = accounts.isRefetching || kpi.isRefetching || missing.isRefetching;
   const refresh = () => Promise.all([accounts.refetch(), kpi.refetch(), missing.refetch()]);
   const error = accounts.error ?? kpi.error ?? missing.error;
@@ -115,16 +123,16 @@ export default function Overview() {
         <Reveal index={0} style={{ paddingTop: space(8), gap: space(4) }}>
           <View style={{ gap: space(2) }}>
             <View style={st.greetingRow}>
-              <Text style={[type.display, { flex: 1 }]} numberOfLines={1} adjustsFontSizeToFit>
+              <Text accessibilityRole="header" style={[type.display, { flex: 1 }]} numberOfLines={1} adjustsFontSizeToFit>
                 {greeting(t)}
               </Text>
               <Button size="sm" icon={ScanLine} title={t('Scan')} onPress={() => captureUnlinked('scan')} />
             </View>
-            <Text style={type.meta}>{`${todayLabel(t)} · ${conn?.companyName ?? ''}`}</Text>
+            <Text style={type.meta}>{[todayLabel(t), conn?.companyName].filter(Boolean).join(' · ')}</Text>
           </View>
           {error ? (
             <Attn action={t('Try again')} onAction={refresh}>
-              {error.message}
+              {error instanceof ApiError ? error.message : t('Could not load everything. Pull down to try again.')}
             </Attn>
           ) : staleHours >= STALE_HOURS && !brokenBanks.length ? (
             <Attn action={t('See banks')} onAction={() => router.push('/banks')}>
@@ -138,7 +146,9 @@ export default function Overview() {
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={st.pillsScroll} contentContainerStyle={st.pills}>
             {todos.length ? (
               todos.map(({ key, ...t }) => <TodoPill key={key} {...t} />)
-            ) : missing.isPending ? (
+            ) : todoFailed ? (
+              <TodoPill key="failed" label={t("Couldn't load everything")} tone="error" icon={FileWarning} onPress={retryTodos} />
+            ) : todoLoading ? (
               <Skeleton width={140} height={36} style={{ borderRadius: 18 }} />
             ) : (
               <TodoPill key="done" label={t('All done')} tone="done" icon={CircleCheck} onPress={() => router.navigate('/receipts')} />
@@ -164,7 +174,12 @@ export default function Overview() {
                 tone={k.netResult < 0 ? 'negative' : undefined}
                 tag={fy}
               />
-              <Tile label={t('VAT')} value={formatMoneyShort(k.vatLiability)} caption={t('to pay')} onPress={() => router.push('/vat')} />
+              <Tile
+                label={t('VAT')}
+                value={formatMoneyShort(Math.abs(k.vatLiability))}
+                caption={k.vatLiability < 0 ? t('to get back') : t('to pay')}
+                onPress={() => router.push('/vat')}
+              />
               <Tile label={t('Revenue')} value={formatMoneyShort(k.totalRevenue)} tag={fy} />
               <Tile label={t('Expenses')} value={formatMoneyShort(k.totalExpenses)} tag={fy} />
             </Reveal>
@@ -188,7 +203,7 @@ export default function Overview() {
 
         {/* Bank */}
         {list.length ? (
-          <Reveal index={5} style={{ paddingTop: space(6) }}>
+          <Reveal index={5}>
             <SectionLabel right={latest ? t('updated {when}', { when: relativeHours(staleHours, t) }) : undefined}>{t('Bank accounts')}</SectionLabel>
             {list.map((a, i) => (
               <Row
@@ -205,7 +220,7 @@ export default function Overview() {
         ) : null}
 
         {/* More from the books */}
-        <Reveal index={6} style={{ paddingTop: space(6) }}>
+        <Reveal index={6}>
           <SectionLabel>{t('More')}</SectionLabel>
           <Row
             icon={FileText}
@@ -243,7 +258,13 @@ function TodoPill({ label, icon: Icon, tone, onPress }: Omit<Todo, 'key'>) {
   const hex = useHex();
   const color = tone === 'attn' ? hex.attn : tone === 'error' ? hex.destructive : tone === 'done' ? hex.success : hex.mutedForeground;
   return (
-    <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [st.pill, pressed && { backgroundColor: colors.muted }]}>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      hitSlop={{ top: 4, bottom: 4 }}
+      onPress={onPress}
+      style={({ pressed }) => [st.pill, pressed && { backgroundColor: colors.muted }]}
+    >
       <Icon size={16} strokeWidth={1.5} color={color} />
       <Text style={st.pillText}>{label}</Text>
     </Pressable>
@@ -270,6 +291,9 @@ function Tile({
     <Pressable
       disabled={!onPress}
       onPress={onPress}
+      accessible
+      accessibilityRole={onPress ? 'button' : undefined}
+      accessibilityLabel={[label, value, tag ?? caption].filter(Boolean).join(', ')}
       style={({ pressed }) => [st.tileBox, st.tile, pressed && { backgroundColor: colors.muted }]}
     >
       <Text style={type.label}>{label}</Text>
@@ -294,7 +318,7 @@ const st = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: space(2),
-    height: 36,
+    minHeight: 36,
     paddingHorizontal: space(3) + 2,
     borderRadius: radius.pill,
     borderWidth: StyleSheet.hairlineWidth,
