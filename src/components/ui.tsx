@@ -37,7 +37,9 @@ export function TopBar({ title, back, right }: { title: string; back?: boolean; 
 export function SectionLabel({ children, right }: { children: string; right?: string }) {
   return (
     <View style={s.sectionLabel}>
-      <Text style={type.label}>{children}</Text>
+      <Text accessibilityRole="header" style={type.label}>
+        {children}
+      </Text>
       {right ? <Text style={type.meta}>{right}</Text> : null}
     </View>
   );
@@ -99,7 +101,12 @@ export function Row({
   );
   if (!onPress) return body;
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => pressed && { backgroundColor: colors.muted }}>
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={[title, meta, value].filter(Boolean).join(', ')}
+      style={({ pressed }) => pressed && { backgroundColor: colors.muted }}
+    >
       {body}
     </Pressable>
   );
